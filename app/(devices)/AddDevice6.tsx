@@ -12,8 +12,8 @@ import TextField from '../../design-system/inputs/TextField';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
 import { Typography } from '../../design-system/typography/typography';
-// Metro config handles BLE mocking when DISABLE_BLE=true
-import bluetoothManager from '../../src/ble';
+// Use the smart lock service for WiFi configuration
+import { smartLockService, WifiConnectionState } from '../../src/ble';
 
 const AddDevice6 = () => {
   const [showProfile, setShowProfile] = useState(false);
@@ -23,11 +23,6 @@ const AddDevice6 = () => {
   const [wifiPassword, setWifiPassword] = useState('');
   const [errors, setErrors] = useState<{ wifiName?: string; wifiPassword?: string }>({});
   const [isSendingWiFi, setIsSendingWiFi] = useState(false);
-
-  // TODO: Replace these UUIDs with your actual device's service and characteristic UUIDs
-  // You need to get these from your ESP32/hardware developer
-  const WIFI_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"; // Example UUID
-  const WIFI_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"; // Example UUID
 
   // Load user data for profile
   useEffect(() => {
@@ -76,10 +71,8 @@ const AddDevice6 = () => {
     setIsSendingWiFi(true);
 
     try {
-      // Get the connected device
-      const connectedDevice = bluetoothManager.getConnectedDevice();
-      
-      if (!connectedDevice) {
+      // Check if device is connected
+      if (!smartLockService.isConnected()) {
         Alert.alert(
           'Not Connected',
           'No device is connected. Please go back and connect to your device first.',
@@ -89,40 +82,66 @@ const AddDevice6 = () => {
         return;
       }
 
-      console.log('📡 Sending WiFi credentials to device:', connectedDevice.name);
+      console.log('📡 Sending WiFi credentials and waiting for connection result...');
 
-      // First, retrieve services to ensure device is ready
-      await bluetoothManager.retrieveServices(connectedDevice.id);
-
-      // Send WiFi credentials via Bluetooth
-      const success = await bluetoothManager.sendWiFiCredentials(
-        connectedDevice.id,
+      // Send WiFi credentials and wait for notification result
+      // This subscribes to WIFI_CONNECTION_STATE (0xBB07) and waits for SUCCESS or FAILED
+      const wifiState = await smartLockService.sendWifiCredentials(
         wifiName,
         wifiPassword,
-        WIFI_SERVICE_UUID,
-        WIFI_CHARACTERISTIC_UUID
+        30000 // 30 second timeout
       );
 
-      if (success) {
-        // Store WiFi credentials in case we need them later
+      console.log('📡 WiFi connection result:', wifiState);
+
+      // Handle the actual result from the device notification
+      if (wifiState === WifiConnectionState.SUCCESS) {
+        // WiFi connected successfully!
         await AsyncStorage.setItem('lastWifiSSID', wifiName);
-        console.log('✅ WiFi credentials sent successfully');
+        console.log('✅ Device confirmed WiFi connection!');
         
-        // Wait a bit for device to process
-        setTimeout(() => {
-          setIsSendingWiFi(false);
-          router.push('/(devices)/AddDevice7');
-        }, 1000);
+        Alert.alert(
+          'WiFi Connected!',
+          'Your device has successfully connected to the WiFi network. Proceeding to next step.',
+          [{
+            text: 'Continue',
+            onPress: () => {
+              setIsSendingWiFi(false);
+              router.push('/(devices)/AddDevice7');
+            }
+          }]
+        );
+      } else if (wifiState === WifiConnectionState.FAILED) {
+        // Device reported WiFi connection failed
+        setIsSendingWiFi(false);
+        Alert.alert(
+          'WiFi Connection Failed',
+          'The device could not connect to the WiFi network. Please check:\n\n• WiFi name (SSID) is correct\n• Password is correct\n• WiFi network is available and in range',
+          [
+            { text: 'Try Again', onPress: () => {} },
+            { text: 'Skip for Now', onPress: () => router.push('/(devices)/AddDevice7') }
+          ]
+        );
       } else {
-        throw new Error('Failed to send WiFi credentials');
+        // Timeout or unexpected state
+        setIsSendingWiFi(false);
+        Alert.alert(
+          'Connection Timeout',
+          'Did not receive a response from the device. The WiFi credentials may have been sent.\n\nWould you like to continue?',
+          [
+            { text: 'Try Again', onPress: () => handleContinue() },
+            { text: 'Continue Anyway', onPress: () => router.push('/(devices)/AddDevice7') }
+          ]
+        );
       }
+
     } catch (error: any) {
       console.error('❌ Error sending WiFi credentials:', error);
       setIsSendingWiFi(false);
       
       Alert.alert(
         'Connection Error',
-        'Failed to send WiFi credentials to the device. Make sure the device is still connected.\n\nNote: You may need to update the Service and Characteristic UUIDs in the code to match your hardware.',
+        `Failed to send WiFi credentials to the device.\n\nError: ${error.message || 'Unknown error'}`,
         [
           { text: 'Try Again', onPress: () => handleContinue() },
           { text: 'Skip for Now', onPress: () => router.push('/(devices)/AddDevice7') }

@@ -8,8 +8,8 @@ import { BackArrow } from '../../design-system/icons';
 import Celebration from '../../design-system/Illustration/celebration';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { Typography } from '../../design-system/typography/typography';
-// Metro config handles BLE mocking when DISABLE_BLE=true
-import bluetoothManager from '../../src/ble';
+// Use the smart lock service for sending token
+import { smartLockService, WifiConnectionState } from '../../src/ble';
 
 // Device Icons
 import { Beylock, Beyplug, Beysense, Beyswitch } from '../../design-system/icons/filled';
@@ -25,10 +25,6 @@ const AddDevice9 = () => {
   const deviceToken = params.deviceToken as string;
   
   const [isSendingToken, setIsSendingToken] = useState(false);
-
-  // TODO: Replace these UUIDs with your actual device's service and characteristic UUIDs
-  const TOKEN_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"; // Example - same or different from WiFi
-  const TOKEN_CHARACTERISTIC_UUID = "ca73b3ba-39f6-4ab3-91ae-186dc9577d99"; // Example UUID
   
   // Log device token for Bluetooth transmission
   console.log('Device Token for Bluetooth transmission:', deviceToken);
@@ -41,39 +37,60 @@ const AddDevice9 = () => {
     setIsSendingToken(true);
     
     try {
-      const connectedDevice = bluetoothManager.getConnectedDevice();
-      
-      if (!connectedDevice || !deviceToken) {
-        console.log('⚠️ No connected device or token, skipping token transmission');
-        // Proceed anyway - token sending is optional at this stage
+      // Check if BLE is still connected
+      if (!smartLockService.isConnected()) {
+        console.log('⚠️ BLE not connected, skipping token transmission');
+        Alert.alert(
+          'Device Not Connected',
+          'Bluetooth connection lost. Please reconnect to send the token.',
+          [
+            { text: 'Skip', onPress: proceedToCalibration },
+            { text: 'Go Back', onPress: () => router.back() }
+          ]
+        );
+        return;
+      }
+
+      if (!deviceToken) {
+        console.log('⚠️ No token available, skipping token transmission');
         proceedToCalibration();
         return;
       }
 
-      console.log('🔐 Sending ThingsBoard token via Bluetooth...');
+      console.log('🔐 Step 2: Sending ThingsBoard token via Bluetooth...');
       
-      const success = await bluetoothManager.sendDeviceToken(
-        connectedDevice.id,
+      // Send token and wait for platform connection notification
+      const connectionState = await smartLockService.sendPlatformTokenAndWait(
         deviceToken,
-        TOKEN_SERVICE_UUID,
-        TOKEN_CHARACTERISTIC_UUID
+        30000 // 30 second timeout
       );
 
-      if (success) {
-        console.log('✅ Token sent successfully');
+      console.log('📡 Platform connection result:', connectionState);
+
+      if (connectionState === WifiConnectionState.CONNECTED_TO_PLATFORM) {
+        console.log('✅ Device connected to ThingsBoard platform!');
         Alert.alert(
           'Success!',
-          'Device token sent to your smart lock. Your device can now connect to ThingsBoard.',
+          'Device is now connected to the platform. Ready for calibration.',
+          [{ text: 'Continue', onPress: proceedToCalibration }]
+        );
+      } else if (connectionState === WifiConnectionState.SUCCESS || 
+                 connectionState === WifiConnectionState.IN_PROGRESS) {
+        // Token sent but not yet connected to platform - proceed anyway
+        console.log('✅ Token sent, connection in progress');
+        Alert.alert(
+          'Token Sent',
+          'Token sent to device. Platform connection may still be in progress.',
           [{ text: 'Continue', onPress: proceedToCalibration }]
         );
       } else {
-        throw new Error('Failed to send token');
+        throw new Error('Failed to connect to platform');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error sending token:', error);
       Alert.alert(
         'Token Not Sent',
-        'Could not send ThingsBoard token via Bluetooth. You may need to configure the device manually later.\n\nWould you like to continue anyway?',
+        `Could not send token to device: ${error.message || 'Unknown error'}\n\nWould you like to continue anyway?`,
         [
           { text: 'Try Again', onPress: sendTokenViaBluetoothAndProceed },
           { text: 'Continue Anyway', onPress: proceedToCalibration }
