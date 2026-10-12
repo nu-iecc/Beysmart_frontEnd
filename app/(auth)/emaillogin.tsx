@@ -10,6 +10,7 @@ import FilledBackIcon from '@/design-system/icons/filled/BackIcon';
 import FilledHomeIcon from '@/design-system/icons/filled/HomeIcon';
 import TextField from '@/design-system/inputs/TextField';
 import { authAPI, LoginRequest } from '@/services';
+import apiClient, { apiErrorMessage } from '@/utils/api';
 
 export default function EmailLoginScreen() {
   const router = useRouter();
@@ -22,12 +23,22 @@ export default function EmailLoginScreen() {
   const canContinue = email.trim() && password.trim();
 
   const handleLogin = async () => {
-    if (!canContinue) return;
+    if (!canContinue || isLoading) return;
     
     setIsLoading(true);
     setError('');
     
     try {
+      if (/^\d{4}$/.test(password)) {
+        const identifier = email.trim().toLowerCase();
+        const { data } = await apiClient.post('auth/verify-otp/', { email: identifier, otp: password });
+        if (data.next !== 'create_password') {
+          setError('Use your invitation code to create an account, or your password to log in.');
+          return;
+        }
+        router.replace({ pathname: '/(auth)/Complete-Registeration', params: { email: identifier, flow: 'guest-invite' } });
+        return;
+      }
       const loginData: LoginRequest = {
         email: email.trim(),
         password: password,
@@ -37,7 +48,7 @@ export default function EmailLoginScreen() {
 
       if (response.success) {
         // Login successful
-        router.push('/(tabs)');
+        router.replace('/(app)/home');
       } else {
         // Login failed - handle specific error cases
         if (response.email_verification_required) {
@@ -52,7 +63,7 @@ export default function EmailLoginScreen() {
       } else if (err.code === 'NETWORK_ERROR' || err.message?.includes('Network Error')) {
         setError(ERROR_MESSAGES.NETWORK_ERROR);
       } else {
-        setError(ERROR_MESSAGES.UNEXPECTED_ERROR);
+        setError(apiErrorMessage(err, ERROR_MESSAGES.UNEXPECTED_ERROR));
       }
     } finally {
       setIsLoading(false);

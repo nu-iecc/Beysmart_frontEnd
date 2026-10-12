@@ -11,7 +11,7 @@ import { OTPInputField } from '../../design-system/inputs';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { AccountSettingsConstants as ACC } from '../../design-system/Profile actions/Constants';
 import { Typography } from '../../design-system/typography/typography';
-import apiClient from '../../utils/api';
+import apiClient, { apiErrorMessage } from '../../utils/api';
 
 const VerifyOTPScreen = () => {
   const { email, phone_number, first_name, last_name, flow, fromAccountSettings } = useLocalSearchParams();
@@ -31,8 +31,13 @@ const VerifyOTPScreen = () => {
   const [otp, setOtp] = useState(['', '', '', '']);
   const [timer, setTimer] = useState(59);
   const [canResend, setCanResend] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [otpError, setOtpError] = useState('');
   
   const handleVerifyOTP = async () => {
+    if (isSubmitting || otp.some(digit => !digit)) return;
+    setIsSubmitting(true);
+    setOtpError('');
     try {
       // Handle delete account flow separately (requires authentication)
       if(flow === 'delete-account'){
@@ -91,14 +96,15 @@ const VerifyOTPScreen = () => {
           ? await apiClient.post('auth/verify-otp/', requestData)
           : await axios.post(`${BASE_URL}auth/verify-otp/`, requestData);
           
-        if(flow === 'register'){
+        if(flow === 'register' || response.data.next === 'create_password'){
           router.push({
             pathname: '/(auth)/Complete-Registeration',
             params: { 
               email: email, 
               phone_number: phone_number,
               first_name: first_name,
-              last_name: last_name
+              last_name: last_name,
+              flow: response.data.next === 'create_password' ? 'guest-invite' : 'register',
             }
           });
         }
@@ -136,8 +142,11 @@ const VerifyOTPScreen = () => {
       console.error('OTP verification failed:', error);
       console.error('Error response:', error.response?.data);
       console.error('Error status:', error.response?.status);
-      const errorMessage = error.response?.data?.error || error.message || 'OTP verification failed. Please try again.';
+      const errorMessage = apiErrorMessage(error, 'OTP verification failed. Please try again.');
+      setOtpError(errorMessage);
       Alert.alert('OTP Verification Failed', errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
@@ -153,13 +162,26 @@ const VerifyOTPScreen = () => {
     }
   }, [timer]);
 
-  const handleResendCode = () => {
-    if (canResend) {
+  const handleResendCode = async () => {
+    if (!canResend || isSubmitting) return;
+    setIsSubmitting(true);
+    setOtpError('');
+    try {
+      if (flow === 'register') {
+        await axios.post(`${BASE_URL}auth/register/`, { email, phone_number, first_name, last_name });
+      } else if (flow === 'login') {
+        await axios.post(`${BASE_URL}auth/phone-login/`, { phone_number });
+      } else {
+        setOtpError('Go back to the previous screen to request a new code.');
+        return;
+      }
+      setOtp(['', '', '', '']);
       setTimer(59);
       setCanResend(false);
-      // Add your resend logic here
-      Alert.alert('Code Resent', 'A new verification code has been sent to your WhatsApp.');
-    }
+      Alert.alert('Code Resent', 'A new verification code has been requested. Use the latest code you receive.');
+    } catch (error) {
+      setOtpError(apiErrorMessage(error, 'Unable to resend the code. Please try again.'));
+    } finally { setIsSubmitting(false); }
   };
 
 
@@ -222,7 +244,7 @@ const VerifyOTPScreen = () => {
           marginBottom: Spacing.sm,
           color: AUTH_THEME.text,
         }}>
-          {copy.title}
+          {flow === 'register' ? 'Verify Your Account' : copy.title}
         </Typography>
 
         {/* Subtitle */}
@@ -232,7 +254,7 @@ const VerifyOTPScreen = () => {
           color: AUTH_THEME.secondaryText,
           paddingHorizontal: Spacing.md,
         }}>
-          {phone_number ? (copy.subtitlePhone || '') : (copy.subtitleEmail || '')}
+          {flow === 'register' ? 'Enter the latest code sent to your email or WhatsApp. The code expires after 5 minutes.' : phone_number ? (copy.subtitlePhone || '') : (copy.subtitleEmail || '')}
         </Typography>
 
         {/* OTP Input Fields */}
@@ -258,28 +280,29 @@ const VerifyOTPScreen = () => {
             marginBottom: Spacing.lg,
           }} 
           onPress={handleResendCode}
-          disabled={!canResend}
+          disabled={!canResend || isSubmitting}
         >
           <Typography variant="body" style={{
             color: AUTH_THEME.secondaryText,
           }}>
-            {copy.resendPrefix}{' '}
+            {canResend ? 'Resend code' : copy.resendPrefix}{' '}
             <Typography variant="body" style={{
               fontWeight: '700',
               color: AUTH_THEME.text,
             }}>
-              {timer}s
+              {canResend ? '' : `${timer}s`}
             </Typography>
           </Typography>
         </TouchableOpacity>
 
         {/* Continue Button */}
+        {!!otpError && <Typography variant="body" color="#B42318" accessibilityRole="alert" style={{ marginBottom: 16, textAlign: 'center' }}>{otpError}</Typography>}
         <AppButton
           variant="primaryLarge"
-          title={copy.continueTitle}
+          title={isSubmitting ? 'Please wait...' : copy.continueTitle}
           icon={visuals.actionIcon ? <visuals.actionIcon width={15} height={15} color={AUTH_THEME.text} /> : undefined}
           onPress={handleVerifyOTP}
-          disabled={!isOtpComplete}
+          disabled={!isOtpComplete || isSubmitting}
         />
 
         <View style={{ 

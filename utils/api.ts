@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { BASE_URL } from '../constants/api';
 
 // Create axios instance with default config
@@ -50,7 +51,7 @@ apiClient.interceptors.request.use(
       }
 
       // Add referer header for CSRF protection
-      config.headers['Referer'] = BASE_URL;
+      if (Platform.OS !== 'web') config.headers['Referer'] = BASE_URL;
     } catch (error) {
       console.error('Error setting up request headers:', error);
     }
@@ -96,5 +97,21 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  const data = (error as { response?: { data?: unknown } } | null)?.response?.data;
+  if (data && typeof data === 'object') {
+    const fields = data as Record<string, unknown>;
+    for (const key of ['error', 'detail', 'message']) {
+      if (typeof fields[key] === 'string') return fields[key];
+    }
+    const messages = Object.entries(data).flatMap(([field, value]) => {
+      const details = Array.isArray(value) ? value.filter(item => typeof item === 'string') : typeof value === 'string' ? [value] : [];
+      return details.map(detail => `${field.replace(/_/g, ' ')}: ${detail}`);
+    });
+    if (messages.length) return messages.join('\n');
+  }
+  return fallback;
+}
 
 export default apiClient;

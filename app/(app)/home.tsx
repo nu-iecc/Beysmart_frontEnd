@@ -21,6 +21,7 @@ import { Linking, ScrollView, TouchableOpacity, View } from 'react-native'
 import ProfilePage from '../(profile actions)/Profile'
 import { BASE_URL } from '../../constants/api'
 import apiClient from '../../utils/api'
+import AccessibleLocks from '@/components/AccessibleLocks'
 
 const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
     const size = HOME_SETUP.DIMENSIONS.STEP_ICON.SIZE
@@ -201,6 +202,14 @@ const HomeScreen: React.FC = () => {
   const [rooms, setRooms] = useState<any[]>([])
   const [isLoadingRooms, setIsLoadingRooms] = useState(true)
   const [showProfile, setShowProfile] = useState(false)
+
+  useEffect(() => {
+    const tab = params.tab
+    if (typeof tab === 'string' && ['home', 'devices', 'energy', 'profile'].includes(tab)) {
+      setActiveTab(tab)
+      setShowProfile(tab === 'profile')
+    }
+  }, [params.tab])
 
   // Function to update setup steps based on current home's state
   const updateStepsForCurrentHome = useCallback((homeId: number | undefined, rooms: any[]) => {
@@ -459,14 +468,15 @@ const HomeScreen: React.FC = () => {
           paddingBottom: Spacing.md,
         }}
       >
-        {steps.map((step, index) => (
+        {activeTab === 'devices' && <AccessibleLocks />}
+        {activeTab === 'home' && <AccessibleLocks emptyContent={steps.map((step, index) => (
           <StepRow
             key={step.id}
             step={step}
             onAction={onAction}
             showLine={index < steps.length - 1}
           />
-        ))}
+        ))} />}
 
         <View style={{ height: HOME_SETUP.SPACING.AFTER_LAST_STEP }} />
 

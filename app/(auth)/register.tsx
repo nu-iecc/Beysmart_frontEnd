@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Modal, ScrollView, TouchableOpacity, View } from 'react-native';
 import { BASE_URL } from '../../constants/api';
+import { apiErrorMessage } from '@/utils/api';
 
 // Design System imports
 import { AUTH_COPY, AUTH_COUNTRIES, AUTH_TEXT, AUTH_THEME, AUTH_VISUALS, type AuthScreenCopy } from '../../design-system/auth/constants';
@@ -23,6 +24,7 @@ import { Typography } from '../../design-system/typography/typography';
   const [selectedCountry, setSelectedCountry] = useState(countries[0]);
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [registrationError, setRegistrationError] = useState('');
 
   // Email validation function - requires .com domain
   const validateEmail = (email: string): boolean => {
@@ -41,6 +43,7 @@ import { Typography } from '../../design-system/typography/typography';
   };
 
   const handleRegister = async () => {
+    setRegistrationError('');
     try {
       const requestData = {
         first_name: firstName,
@@ -69,7 +72,8 @@ import { Typography } from '../../design-system/typography/typography';
       });
       
     }  catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message || 'Registration failed. Please try again.';
+      const errorMessage = apiErrorMessage(error, 'Registration failed. Please check your connection and try again.');
+      setRegistrationError(errorMessage);
       Alert.alert('Registration Failed', errorMessage);
     }
   }
@@ -234,6 +238,7 @@ import { Typography } from '../../design-system/typography/typography';
             </Typography>
           </View>
         </View>
+        {!!registrationError && <Typography variant="body" color="#B42318" accessibilityRole="alert">{registrationError}</Typography>}
       </ScrollView>
 
       {/* Country Picker Modal */}

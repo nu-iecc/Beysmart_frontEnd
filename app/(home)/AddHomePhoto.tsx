@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from "react";
-import { Alert, Image, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, Platform, TouchableOpacity, View } from 'react-native';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
 import { ADD_HOME } from '../../design-system/home/Constants';
@@ -9,7 +9,7 @@ import { BackArrow, ImageIcon, LockIcon, UserIcon } from '../../design-system/ic
 import { Padding } from '../../design-system/Layout/padding';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { Typography } from '../../design-system/typography/typography';
-import apiClient from '../../utils/api';
+import apiClient, { apiErrorMessage } from '../../utils/api';
 
 interface HomeData {
   homeName?: string;
@@ -21,6 +21,8 @@ const AddHomePhoto = () => {
   const params = useLocalSearchParams();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [uploadError, setUploadError] = useState('');
 
   // Get home data from previous screen
   const homeId = params.homeId as string;
@@ -42,7 +44,7 @@ const AddHomePhoto = () => {
 
       // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -59,6 +61,8 @@ const AddHomePhoto = () => {
         }
         
         setSelectedImage(selectedAsset.uri);
+        setSelectedAsset(selectedAsset);
+        setUploadError('');
       }
     } catch (error) {
       console.error('Error picking image:', error);
@@ -67,6 +71,7 @@ const AddHomePhoto = () => {
   };
 
   const handleHomePhoto = async () => {
+    if (isUploading) return;
     if (!selectedImage) {
       Alert.alert('No Photo Selected', 'Please select a photo first.');
       return;
@@ -78,12 +83,13 @@ const AddHomePhoto = () => {
     }
 
     setIsUploading(true);
+    setUploadError('');
     try {
       // Create FormData for the image upload
       const formData = new FormData();
       
       // Get the file extension and determine MIME type
-      const uriParts = selectedImage.split('.');
+      const uriParts = (selectedAsset?.fileName || selectedImage.split('?')[0]).split('.');
       const fileExtension = uriParts[uriParts.length - 1].toLowerCase();
       
       // Map common extensions to MIME types
@@ -95,16 +101,23 @@ const AddHomePhoto = () => {
         'webp': 'image/webp',
       };
       
-      const mimeType = mimeTypeMap[fileExtension] || 'image/jpeg';
+      const mimeType = selectedAsset?.mimeType || mimeTypeMap[fileExtension] || 'image/jpeg';
       
       // Append the image file
-      formData.append('photo', {
+      if (Platform.OS === 'web') {
+        const file = selectedAsset?.file || await (await fetch(selectedImage)).blob();
+        formData.append('photo', file, selectedAsset?.fileName || `home_photo.${mimeType.split('/')[1] || 'jpg'}`);
+      } else formData.append('photo', {
         uri: selectedImage,
         type: mimeType,
         name: `home_photo.${fileExtension}`,
       } as any);
    
       const response = await apiClient.patch(`home/homes/${homeId}/upload_photo/`, formData);
+      if (Platform.OS === 'web') {
+        router.push({ pathname: '/(home)/AddHomeDone', params: { ...homeData, homePhoto: selectedImage } });
+        return;
+      }
       
       // Navigate to the next screen (you can adjust this based on your flow)
       Alert.alert('Success', 'Home photo uploaded successfully!', [
@@ -127,7 +140,8 @@ const AddHomePhoto = () => {
       
     } catch (error: any) {
       console.error('Home photo upload failed:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to upload home photo. Please try again.';
+      const errorMessage = apiErrorMessage(error, 'Failed to upload home photo. Please try again.');
+      setUploadError(errorMessage);
       Alert.alert('Upload Failed', errorMessage);
     } finally {
       setIsUploading(false);
@@ -166,6 +180,7 @@ const AddHomePhoto = () => {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {!!uploadError && <Typography variant="body" color={colors.error} accessibilityRole="alert" style={{ padding: 16 }}>{uploadError}</Typography>}
       {/* Header (match AddHome) */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
