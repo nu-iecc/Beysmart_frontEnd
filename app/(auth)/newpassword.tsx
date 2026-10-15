@@ -1,19 +1,17 @@
 import axios from "axios";
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, ScrollView, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { BASE_URL } from '../../constants/api';
 import { AUTH_COPY, AUTH_TEXT, AUTH_THEME, AUTH_VISUALS, type AuthScreenCopy } from '../../design-system/auth/constants';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { TextField } from '../../design-system/inputs';
-import { Margin } from '../../design-system/Layout/margins';
-import { Padding } from '../../design-system/Layout/padding';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { Typography } from '../../design-system/typography/typography';
 import apiClient from '../../utils/api';
 
 
-const newpassword = () => {
+const NewPassword = () => {
   const [new_password, setNewPassword] = useState('');
   const [confirm_password, setConfirmPassword] = useState('');
   const { email, phone_number, fromAccountSettings } = useLocalSearchParams();
@@ -53,106 +51,69 @@ const newpassword = () => {
   };
 
   const isDisabled = !new_password || !confirm_password || new_password !== confirm_password;
+  const showMismatch = confirm_password.length > 0 && new_password !== confirm_password;
 
   const copy = AUTH_COPY.newPassword as AuthScreenCopy;
   const visuals = AUTH_VISUALS.newPassword;
 
   return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
-      {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
-        {/* Back Button */}
+    <ScrollView
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.header}>
         <TouchableOpacity
-          style={{
-            width: 48,
-            height: 48,
-            backgroundColor: AUTH_THEME.surface,
-            borderRadius: 12,
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: Spacing.lg,
-          }}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
           onPress={() => router.back()}
         >
-          <visuals.backIcon width={24} height={24} color={AUTH_THEME.text} />
+          <visuals.backIcon width={22} height={22} color={AUTH_THEME.text} />
         </TouchableOpacity>
+      </View>
 
-        {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
-          <View
-            style={{
-              width: 96,
-              height: 96,
-              backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: Spacing.md,
-            }}
-          >
-            <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
+      <View style={styles.hero}>
+        <View style={[styles.heroIcon, { backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary }]}>
+          {visuals.securityIcon && <visuals.securityIcon width={32} height={32} color={AUTH_THEME.text} />}
+        </View>
+        <Typography variant="h1" style={styles.title}>
+          {copy.title}
+        </Typography>
+        <Typography variant="body" color={AUTH_THEME.secondaryText} style={styles.subtitle}>
+          {copy.subtitle}
+        </Typography>
+      </View>
+
+      <View style={styles.form}>
+        <TextField
+          label="New Password"
+          value={new_password}
+          onChangeText={setNewPassword}
+          placeholder="Create a strong password"
+          secureTextEntry
+          showEyeIcon
+        />
+        <TextField
+          label="Confirm Password"
+          value={confirm_password}
+          onChangeText={setConfirmPassword}
+          placeholder="Confirm your password"
+          secureTextEntry
+          showEyeIcon
+          error={showMismatch ? 'Passwords do not match yet.' : undefined}
+        />
+
+        <View style={styles.requirement}>
+          <View style={styles.requirementIcon}>
+            {visuals.securityIcon && <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />}
           </View>
-          
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
-            {copy.title}
-          </Typography>
-          
-          <Typography variant="body" color={AUTH_THEME.secondaryText}>
-            {copy.subtitle}
+          <Typography variant="caption" color={AUTH_THEME.secondaryText} style={styles.requirementText}>
+            {AUTH_TEXT.passwordRequirement}
           </Typography>
         </View>
       </View>
 
-      {/* Form (scrollable) */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          ...Padding.screenHorizontal,
-          paddingBottom: Spacing.xl,
-        }}
-      >
-        {/* Form Fields */}
-        <View style={{ ...Margin.betweenComponents }}>
-          <TextField
-            label="New Password"
-            value={new_password}
-            onChangeText={setNewPassword}
-            placeholder="Create a strong password"
-            secureTextEntry={true}
-          />
-        </View>
-
-        <View style={{ ...Margin.betweenComponents }}>
-          <TextField
-            label="Confirm Password"
-            value={confirm_password}
-            onChangeText={setConfirmPassword}
-            placeholder="Confirm your password"
-            secureTextEntry={true}
-          />
-        </View>
-
-        {/* Password Requirements */}
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
-          marginTop: Spacing.xs 
-        }}>
-          {visuals.securityIcon ? (
-            <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
-          ) : null}
-          <Typography 
-            variant="caption" 
-            color={AUTH_THEME.secondaryText}
-            style={{ marginLeft: 4 }}
-          >
-            {AUTH_TEXT.passwordRequirement}
-          </Typography>
-        </View>
-      </ScrollView>
-
-      {/* Footer (fixed) */}
-      <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg }}>
+      <View style={styles.footer}>
         <AppButton
           variant={isDisabled ? 'primaryDisabled' : 'primaryLarge'}
           title={copy.buttons.primaryTitle}
@@ -160,27 +121,96 @@ const newpassword = () => {
           disabled={isDisabled}
         />
 
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          marginTop: Spacing.lg 
-        }}>
-          {visuals.securityIcon ? (
-            <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
-          ) : null}
-          <Typography 
-            variant="caption" 
-            color={AUTH_THEME.secondaryText}
-            style={{ marginLeft: 4 }}
-          >
+        <View style={styles.securityFooter}>
+          {visuals.securityIcon && <visuals.securityIcon width={15} height={15} color={AUTH_THEME.secondaryText} />}
+          <Typography variant="caption" color={AUTH_THEME.secondaryText} style={styles.securityText}>
             {AUTH_TEXT.securityFooter}
           </Typography>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
-export default newpassword;
+const styles = StyleSheet.create({
+  container: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    backgroundColor: AUTH_THEME.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: AUTH_THEME.surface,
+  },
+  hero: {
+    alignItems: 'center',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  heroIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
+  },
+  subtitle: {
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  form: {
+    gap: Spacing.sm,
+  },
+  requirement: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderRadius: 12,
+    backgroundColor: '#EEF1F4',
+    marginTop: Spacing.xs,
+  },
+  requirementIcon: {
+    width: 24,
+    alignItems: 'center',
+    marginRight: Spacing.xs,
+  },
+  requirementText: {
+    flex: 1,
+  },
+  footer: {
+    marginTop: 'auto',
+    paddingTop: Spacing.xl,
+  },
+  securityFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+    gap: Spacing.xs,
+  },
+  securityText: {
+    textAlign: 'center',
+  },
+});
 
+export default NewPassword;

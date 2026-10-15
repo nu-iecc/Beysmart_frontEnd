@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { LOGIN_STRINGS } from '@/constants/Login';
 import { ERROR_MESSAGES } from '@/constants/errors';
@@ -71,7 +71,7 @@ export default function EmailLoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       {/* Header */}
       <View style={styles.headerRow}>
         <AppButton
@@ -154,27 +154,32 @@ export default function EmailLoginScreen() {
           </Typography>
         </View>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    paddingBottom: Spacing.lg,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
     width: '100%',
   },
   heroDot: {
@@ -187,7 +192,8 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   title: {
     textAlign: 'center',
@@ -206,4 +212,3 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
 });
-

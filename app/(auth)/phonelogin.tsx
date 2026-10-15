@@ -219,16 +219,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
   },
   heroDot: {
     width: 72,
@@ -240,7 +244,8 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   title: {
     textAlign: 'center',
@@ -252,10 +257,10 @@ const styles = StyleSheet.create({
   countryPicker: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
     backgroundColor: colors.surface,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 0,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -280,13 +285,15 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: Grid.gutterWidth,
+    borderWidth: 1,
+    borderColor: '#E7EAF0',
   },
   searchInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     color: colors.text,
@@ -307,4 +314,3 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
 });
-

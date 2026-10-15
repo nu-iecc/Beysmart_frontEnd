@@ -74,16 +74,16 @@ export default function ResetByPhone() {
   const isDisabled = !phoneNumber.trim() || isLoading;
 
   return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
       {/* Header */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -94,13 +94,13 @@ export default function ResetByPhone() {
         </TouchableOpacity>
 
         {/* Phone Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
-              width: 96,
-              height: 96,
+              width: 72,
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -109,7 +109,7 @@ export default function ResetByPhone() {
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {copy.title}
           </Typography>
           
@@ -126,7 +126,7 @@ export default function ResetByPhone() {
         style={{ flex: 1 }}
         contentContainerStyle={{
           ...Padding.screenHorizontal,
-          paddingBottom: Spacing.xl,
+          paddingBottom: Spacing.lg,
         }}
       >
         {/* Country/Region Dropdown */}
@@ -137,8 +137,9 @@ export default function ResetByPhone() {
           <TouchableOpacity
             style={{
               backgroundColor: AUTH_THEME.surface,
-              borderRadius: 12,
-              padding: Spacing.md,
+              borderRadius: 14,
+              paddingHorizontal: Spacing.md,
+              minHeight: 52,
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -166,12 +167,12 @@ export default function ResetByPhone() {
             <View
               style={{
                 backgroundColor: colors.surface,
-                borderRadius: 8,
+                borderRadius: 12,
                 borderWidth: 1,
                 borderColor: AUTH_THEME.border,
-                minWidth: 80,
+                minWidth: 84,
                 paddingHorizontal: Spacing.sm,
-                paddingVertical: 10,
+                minHeight: 52,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -201,7 +202,7 @@ export default function ResetByPhone() {
       </ScrollView>
 
       {/* Footer */}
-      <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg }}>
+      <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg, paddingTop: Spacing.sm }}>
         <AppButton
           variant={isDisabled ? 'primaryDisabled' : 'primaryLarge'}
           title={copy.buttons.primaryTitle}
@@ -285,6 +286,5 @@ export default function ResetByPhone() {
     </View>
   );
 };
-
 
 

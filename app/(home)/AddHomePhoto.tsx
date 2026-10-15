@@ -212,10 +212,10 @@ const AddHomePhoto = () => {
         <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
           <View
             style={{
-              width: 96,
-              height: 96,
+              width: 72,
+              height: 72,
               backgroundColor: colors.primary.base,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -347,7 +347,7 @@ const styles = {
     fontWeight: '600' as const,
   },
   stepIndicator: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'right' as const,
   },
 };

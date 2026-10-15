@@ -16,12 +16,14 @@ import type { BottomNavigationItem, Home as DSHome, User as DSUser } from '@/des
 import { Typography } from '@/design-system/typography/typography'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Linking, ScrollView, TouchableOpacity, View } from 'react-native'
-import ProfilePage from '../(profile actions)/Profile'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Animated, Linking, RefreshControl, TouchableOpacity, View } from 'react-native'
+import ProfileSection from '@/components/ProfileSection'
 import { BASE_URL } from '../../constants/api'
 import apiClient from '../../utils/api'
 import AccessibleLocks from '@/components/AccessibleLocks'
+import ComingSoon from '@/components/ComingSoon'
+import { useToast } from '@/components/Toast'
 
 const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
     const size = HOME_SETUP.DIMENSIONS.STEP_ICON.SIZE
@@ -172,6 +174,7 @@ const Header: React.FC<{
   activeHomeId?: number
   onHomeSelect: (id: number) => void
 }> = React.memo(({ user, homes, activeHomeId, onHomeSelect }) => {
+  const toast = useToast()
   const handleAddHome = useCallback(() => {
     router.push('/(home)/AddHome')
   }, [])
@@ -183,8 +186,8 @@ const Header: React.FC<{
       activeHomeId={activeHomeId}
       onHomeSelect={onHomeSelect}
       onAddHome={handleAddHome}
-      onAddMember={() => {}}
-      onNotificationPress={() => {}}
+      onAddMember={() => toast('info', 'Adding home members is coming soon.')}
+      onNotificationPress={() => toast('info', 'Notifications are coming soon.')}
     />
   )
 })
@@ -201,13 +204,25 @@ const HomeScreen: React.FC = () => {
   const [isLoadingHomes, setIsLoadingHomes] = useState(true)
   const [rooms, setRooms] = useState<any[]>([])
   const [isLoadingRooms, setIsLoadingRooms] = useState(true)
-  const [showProfile, setShowProfile] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true)
+    setRefreshKey(value => value + 1)
+  }, [])
+  const handleRefreshed = useCallback(() => setRefreshing(false), [])
+  const contentOpacity = useRef(new Animated.Value(1)).current
+  useEffect(() => {
+    contentOpacity.setValue(0)
+    const transition = Animated.timing(contentOpacity, { toValue: 1, duration: 180, useNativeDriver: true })
+    transition.start()
+    return () => transition.stop()
+  }, [activeTab, contentOpacity])
 
   useEffect(() => {
     const tab = params.tab
     if (typeof tab === 'string' && ['home', 'devices', 'energy', 'profile'].includes(tab)) {
       setActiveTab(tab)
-      setShowProfile(tab === 'profile')
     }
   }, [params.tab])
 
@@ -436,51 +451,46 @@ const HomeScreen: React.FC = () => {
     setSteps(updated)
   }, [steps])
 
-  const handleTabPress = useCallback((key: string) => {
-    setActiveTab(key)
-    if (key === 'profile') {
-      setShowProfile(true)
-    }
-    // Add other tab navigation handlers as needed
-  }, [])
+  const handleTabPress = useCallback((key: string) => setActiveTab(key), [])
 
   // Show loading state while fetching user data
   if (isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: '#F3F5F8', justifyContent: 'center', alignItems: 'center' }}>
         <Typography variant="body">Loading...</Typography>
       </View>
     )
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <View style={{ flex: 1, backgroundColor: '#F3F5F8' }}>
       <Header
         user={user || { first_name: undefined, profile_picture: undefined }}
         homes={homes}
         activeHomeId={activeHomeId}
         onHomeSelect={setActiveHomeId}
       />
-      <ScrollView
+      <Animated.ScrollView style={{ opacity: contentOpacity }}
+        refreshControl={activeTab === 'energy' || activeTab === 'profile' ? undefined : <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         contentContainerStyle={{
+          flexGrow: 1,
           paddingHorizontal: Spacing.lg,
           paddingTop: Spacing.lg,
           paddingBottom: Spacing.md,
         }}
       >
-        {activeTab === 'devices' && <AccessibleLocks />}
-        {activeTab === 'home' && <AccessibleLocks emptyContent={steps.map((step, index) => (
+        {(activeTab === 'home' || activeTab === 'devices') && <AccessibleLocks refreshKey={refreshKey} onRefreshed={handleRefreshed} emptyContent={activeTab === 'home' ? steps.map((step, index) => (
           <StepRow
             key={step.id}
             step={step}
             onAction={onAction}
             showLine={index < steps.length - 1}
           />
-        ))} />}
+        )) : undefined} />}
+        {activeTab === 'energy' && <ComingSoon title="Energy" icon="flash-outline" />}
+        {activeTab === 'profile' && <ProfileSection name={user?.first_name} email={userEmail} profilePicture={user?.profile_picture} homesCount={homes.length} />}
 
-        <View style={{ height: HOME_SETUP.SPACING.AFTER_LAST_STEP }} />
-
-        <View style={{ alignItems: 'center', marginTop: HOME_SETUP.SPACING.HELP_SECTION }}>
+        <View style={{ alignItems: 'center', marginTop: 'auto', paddingTop: Spacing.xl }}>
   <View style={{ flexDirection: "row" }}>
     <Typography variant="caption" color={'#6B7280'}>
       Need help?
@@ -502,7 +512,7 @@ const HomeScreen: React.FC = () => {
     </TouchableOpacity>
   </View>
 </View>
-      </ScrollView>
+      </Animated.ScrollView>
       <BottomNavigation
         items={bottomNavItems}
         activeKey={activeTab}
@@ -510,37 +520,6 @@ const HomeScreen: React.FC = () => {
         onTabPress={handleTabPress}
       />
       
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        onClose={() => setShowProfile(false)}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail, // Real user email from stored data
-          profilePicture: user.profile_picture || null,
-          homesCount: homes.length
-        } : undefined}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
     </View>
   )
 }

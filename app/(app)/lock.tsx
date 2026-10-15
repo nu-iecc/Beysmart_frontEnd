@@ -1,5 +1,6 @@
+import LockLoader from '@/components/LockLoader';
 import { AppButton, Typography } from '@/design-system';
-import TextField from '@/design-system/inputs/TextField';
+import { useToast } from '@/components/Toast';
 import { AccessibleLock, getAccessibleLock, lockStatus } from '@/services/locks';
 import apiClient from '@/utils/api';
 import { colors } from '@/design-system/colors/colors';
@@ -7,7 +8,7 @@ import { BottomNavigation } from '@/design-system/Navigation';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Animated, Easing, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function LockScreen() {
   const { id, homeName } = useLocalSearchParams<{ id: string; homeName?: string }>();
@@ -15,11 +16,19 @@ export default function LockScreen() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [panel, setPanel] = useState<'invite' | 'settings' | 'activity' | null>(null);
+  const toast = useToast();
   const [connected, setConnected] = useState(false);
+  const connectedRef = useRef(false);
+  connectedRef.current = connected;
+  const [phase, setPhase] = useState<'connecting' | 'disconnecting' | 'lock' | 'unlock' | null>(null);
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!phase) { pulse.stopAnimation(); pulse.setValue(0); return; }
+    const loop = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1400, easing: Easing.out(Easing.ease), useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [phase, pulse]);
   const [battery, setBattery] = useState<number | null>(null);
-  const [activities, setActivities] = useState<{ id: string; description: string; timestamp: string }[]>([]);
   const serviceRef = useRef<typeof import('@/src/ble/SmartLockService').smartLockService | null>(null);
   const subscriptionsRef = useRef<(() => void)[]>([]);
   useEffect(() => () => {
@@ -27,29 +36,30 @@ export default function LockScreen() {
     subscriptionsRef.current = [];
     serviceRef.current?.disconnect().catch(() => {});
   }, [id]);
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
   const [refresh, setRefresh] = useState(0);
 
+  // Re-check access (and pick up renames) whenever the screen regains focus.
   useFocusEffect(useCallback(() => {
     let active = true;
-    setLock(null);
-    setPanel(null);
     setError('');
-    setNotice('');
-    setLoading(true);
     getAccessibleLock(id).then(data => {
-      if (active) { setLock(data); setName(data.name); }
+      // While connected, the lock itself is the source of truth for its position.
+      if (active) setLock(prev => connectedRef.current && prev ? { ...data, is_locked: prev.is_locked } : data);
     }).catch(() => {
-      if (active) setError('Unable to open this lock. Your access may have changed.');
+      if (active) { setLock(null); setError('Unable to open this lock. Your access may have changed.'); }
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [id, refresh]));
 
+  const openPage = (pathname: '/(app)/lock-invite' | '/(app)/lock-settings' | '/(app)/lock-activity') => {
+    if (busy || !lock) return;
+    router.push({ pathname, params: { id, lockName: lock.name } });
+  };
+
   const connect = async () => {
     if (busy || !lock) return;
     setBusy(true);
-    setError('');
+    setPhase('connecting');
     try {
       const current = await getAccessibleLock(id);
       setLock(current);
@@ -72,28 +82,31 @@ export default function LockScreen() {
         state.lockPosition === LockPosition.CLOSED_UNLOCKED_POSITION ? false : null });
     } catch (err) {
       setConnected(false);
-      setError(err instanceof Error ? err.message : 'Unable to connect.');
-    } finally { setBusy(false); }
+      toast('error', err instanceof Error ? err.message : 'Unable to connect.');
+    } finally { setBusy(false); setPhase(null); }
   };
 
-  const showActivity = async () => {
-    setPanel('activity');
+  const disconnect = async () => {
+    if (busy) return;
     setBusy(true);
-    setError('');
-    setActivities([]);
+    setPhase('disconnecting');
     try {
-      const { data } = await apiClient.get('home/activity-logs/', { params: { device_id: id } });
-      setActivities(Array.isArray(data) ? data : data.results || []);
-    } catch (err: any) {
-      setError(err.response?.status === 403 ? 'Activity logs are restricted by the server for this lock.' : 'Unable to load activity logs.');
-    } finally { setBusy(false); }
+      await serviceRef.current?.disconnect();
+    } catch {
+      // The link is dropped locally either way.
+    } finally {
+      setConnected(false);
+      setBusy(false);
+      setPhase(null);
+    }
   };
 
   const controlLock = async (action: 'lock' | 'unlock') => {
     if (!lock || busy) return;
     setBusy(true);
-    setError('');
-    setNotice('');
+    setPhase(action);
+    // Keep a connection the user opened; only drop one opened just for this command.
+    const keepConnection = connected;
     try {
       // Refresh authorization before attempting a physical operation.
       const current = await getAccessibleLock(id);
@@ -112,114 +125,159 @@ export default function LockScreen() {
         try {
           await apiClient.post(`home/devices/${encodeURIComponent(id)}/${action}/`, { access_method: 'bluetooth' });
         } catch {
-          setNotice('The lock responded, but its activity could not be synced.');
+          toast('error', 'The lock responded, but its activity could not be synced.');
         }
       } finally {
-        await smartLockService.disconnect();
-        setConnected(false);
+        if (!keepConnection) {
+          await smartLockService.disconnect();
+          setConnected(false);
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to operate this lock.');
-    } finally { setBusy(false); }
+      toast('error', err instanceof Error ? err.message : 'Unable to operate this lock.');
+    } finally { setBusy(false); setPhase(null); }
   };
 
-  const manage = async () => {
-    if (busy || lock?.role !== 'owner' || !panel || panel === 'activity') return;
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      const current = await getAccessibleLock(id);
-      setLock(current);
-      if (current.role !== 'owner') { setPanel(null); throw new Error('Only the owner can manage this lock.'); }
-      const path = `home/devices/${encodeURIComponent(id)}/`;
-      if (panel === 'invite') {
-        const { data } = await apiClient.post(`${path}invite-guest/`, { invitee_email: email.trim().toLowerCase(), role: 'guest' });
-        setEmail('');
-        setNotice(data.pending ? 'Invitation code sent. The guest can use the OTP option below the login password field, then set their password.' : 'Guest access granted. They can log in and refresh their locks.');
-      } else {
-        const { data } = await apiClient.patch(path, { name: name.trim() });
-        setLock(data);
-        setNotice('Lock settings saved.');
-      }
-      setPanel(null);
-    } catch (err: any) {
-      const detail = err.response?.data;
-      setError(detail?.error || detail?.detail || (detail ? 'Unable to save. Check the details and try again.' : err.message) || 'Unable to save. Please try again.');
-    } finally { setBusy(false); }
-  };
-
-  const menuRow = (icon: React.ComponentProps<typeof Ionicons>['name'], title: string, onPress: () => void) => (
-    <TouchableOpacity style={styles.menuRow} accessibilityRole="button" disabled={busy} onPress={onPress}>
-      <Ionicons name={icon} size={26} color={colors.navBarBackground} />
-      <Typography variant="body" style={{ flex: 1 }}>{title}</Typography>
-      <Ionicons name="chevron-forward" size={20} color={colors.secondaryText} />
+  const menuRow = (icon: React.ComponentProps<typeof Ionicons>['name'], title: string, description: string, onPress: () => void, last = false) => (
+    <TouchableOpacity style={[styles.menuRow, !last && styles.menuRowDivider]} accessibilityRole="button" disabled={busy} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.menuIcon}>
+        <Ionicons name={icon} size={20} color={colors.navBarBackground} />
+      </View>
+      <View style={styles.menuCopy}>
+        <Typography variant="body" style={styles.menuTitle}>{title}</Typography>
+        <Typography variant="caption" color={colors.disabled}>{description}</Typography>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#9AA4B2" />
     </TouchableOpacity>
   );
 
+  const tile = (icon: React.ComponentProps<typeof Ionicons>['name'], title: string, description: string, tint: string, onPress: () => void) => (
+    <TouchableOpacity style={styles.tile} accessibilityRole="button" disabled={busy} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.tileTop}>
+        <View style={[styles.tileIcon, { backgroundColor: tint }]}>
+          <Ionicons name={icon} size={22} color={colors.navBarBackground} />
+        </View>
+        <Ionicons name="arrow-forward" size={16} color="#9AA4B2" style={styles.tileArrow} />
+      </View>
+      <Typography variant="body" style={styles.menuTitle}>{title}</Typography>
+      <Typography variant="caption" color={colors.disabled} numberOfLines={2}>{description}</Typography>
+    </TouchableOpacity>
+  );
+
+  const isOwner = lock?.role === 'owner';
+  const unlocked = connected && lock?.is_locked === false;
+  const lockKnown = connected && lock?.is_locked != null;
+  const statusTitle = phase === 'connecting' ? 'Connecting…' : phase === 'disconnecting' ? 'Disconnecting…'
+    : phase === 'lock' ? 'Locking…' : phase === 'unlock' ? 'Unlocking…'
+    : connected && lock ? lockStatus(lock) : 'Disconnected';
+  const statusHint = phase === 'connecting' ? 'Stay close to the lock'
+    : phase ? 'Please wait'
+    : !connected ? 'Tap the lock to connect via Bluetooth'
+    : lockKnown ? `Tap to ${unlocked ? 'lock' : 'unlock'}` : 'Use the buttons below to lock or unlock';
+  const onHeroPress = () => {
+    if (!lock || busy) return;
+    if (!connected) connect();
+    else if (lockKnown) controlLock(lock.is_locked ? 'unlock' : 'lock');
+  };
+  const pulseStyle = {
+    opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+    transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] }) }],
+  };
+
   return <View style={styles.screen}>
-    <View style={styles.header}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" disabled={busy} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={30} color={colors.surface} />
-      </TouchableOpacity>
-      <Typography variant="h3" color={colors.surface} style={{ flex: 1 }}>{lock?.name || 'Lock'}{homeName ? ` - ${homeName}` : ''}</Typography>
-      {lock && <Typography variant="caption" color={colors.surface}>{lock.role === 'owner' ? 'Owner' : 'Guest'}</Typography>}
-    </View>
-    <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-    {loading ? <ActivityIndicator style={{ marginTop: 40 }} /> : <>
-      {lock && <>
-        <View style={styles.controlArea}>
-          <View style={styles.telemetry}>
-            <View style={styles.telemetryItem}>
-              <Ionicons name="battery-full" size={22} color="#8D9E60" />
-              <Typography variant="caption">{battery === null ? '--' : `${battery}%`}</Typography>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.header}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back" disabled={busy} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={22} color={colors.surface} />
+          </TouchableOpacity>
+          <View style={styles.headerCopy}>
+            <Typography variant="h3" color={colors.surface} numberOfLines={1}>{lock?.name || 'Lock'}</Typography>
+            <View style={styles.homeRow}>
+              <Ionicons name="home-outline" size={12} color="#C7D0DD" />
+              <Typography variant="caption" color="#C7D0DD" numberOfLines={1} style={styles.homeLabel}>{homeName || 'Your smart lock'}</Typography>
             </View>
-            <TouchableOpacity style={styles.telemetryItem} accessibilityRole="button" disabled={busy} onPress={connect}>
-              <Ionicons name="bluetooth" size={24} color={colors.info} />
-              <Typography variant="caption" color={colors.info}>{busy ? 'Please wait...' : connected ? 'Connected' : 'Connect'}</Typography>
-              <Ionicons name="wifi" size={24} color={colors.disabled} />
+          </View>
+          {lock && <View style={[styles.roleBadge, isOwner && styles.roleBadgeOwner]}>
+            <Ionicons name={isOwner ? 'key' : 'person'} size={12} color={isOwner ? colors.text : colors.surface} />
+            <Typography variant="caption" color={isOwner ? colors.text : colors.surface} style={styles.roleLabel}>{isOwner ? 'Owner' : 'Guest'}</Typography>
+          </View>}
+        </View>
+
+        {lock && <>
+          <View style={styles.hero}>
+            <View style={styles.heroStage}>
+              <Animated.View pointerEvents="none" style={[styles.heroPulse, connected && styles.heroPulseConnected, pulseStyle]} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={connected ? (unlocked ? 'Lock' : 'Unlock') : 'Connect'}
+                disabled={busy || (connected && !lockKnown)} onPress={onHeroPress} activeOpacity={0.85}
+                style={[styles.heroRing, connected && styles.heroRingConnected]}>
+                <View style={[styles.heroButton, connected && styles.heroButtonConnected]}>
+                  {phase ? <LockLoader size={40} tone={connected ? 'lime' : 'dark'} /> :
+                    <Ionicons name={connected ? (unlocked ? 'lock-open' : 'lock-closed') : 'bluetooth'} size={52} color={connected ? colors.text : colors.surface} />}
+                </View>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, connected ? styles.statusDotConnected : styles.statusDotDisconnected]} />
+              <Typography variant="h2" color={colors.surface} style={styles.statusTitle} numberOfLines={1}>{statusTitle}</Typography>
+            </View>
+            <Typography variant="caption" color="#C7D0DD" style={styles.statusHint}>{statusHint}</Typography>
+            <TouchableOpacity style={[styles.linkButton, connected ? styles.disconnectButton : styles.connectButton]} accessibilityRole="button"
+              disabled={busy} onPress={connected ? disconnect : connect} activeOpacity={0.8}>
+              <Ionicons name={connected ? 'close-circle-outline' : 'bluetooth'} size={18} color={connected ? colors.surface : colors.text} />
+              <Typography variant="body" color={connected ? colors.surface : colors.text} style={styles.actionLabel}>
+                {connected ? 'Disconnect' : 'Connect'}
+              </Typography>
             </TouchableOpacity>
           </View>
-          <View style={styles.circleArea}>
-            <TouchableOpacity style={[styles.statusCircle, connected && { backgroundColor: colors.primary.lightest }]}
-              accessibilityRole="button" accessibilityLabel={connected ? `Lock state: ${lockStatus(lock)}` : 'Connect to lock'}
-              disabled={busy || connected} onPress={connect}>
-              <Typography variant="h2" color={colors.disabled}>{busy ? 'Please wait...' : connected ? lockStatus(lock) : 'Disconnected'}</Typography>
-            </TouchableOpacity>
-            <Typography variant="body" color={colors.secondaryText} style={styles.hint}>
-              {connected ? 'Use the controls below to lock or unlock.' : 'Please connect to wifi or bluetooth to use lock.'}
-            </Typography>
-            {connected && <View style={styles.actions}>
-              <AppButton variant="primarySmall" title="Lock" disabled={busy} onPress={() => controlLock('lock')} />
-              <AppButton variant="primarySmall" title="Unlock" disabled={busy} onPress={() => controlLock('unlock')} />
-            </View>}
+
+          <View style={styles.stats}>
+            {[
+              { icon: 'battery-half' as const, label: 'Battery', value: battery === null ? '--' : `${battery}%` },
+              { icon: 'bluetooth' as const, label: 'Bluetooth', value: connected ? 'On' : 'Off' },
+              { icon: 'shield-checkmark' as const, label: 'Access', value: isOwner ? 'Full' : 'Guest' },
+            ].map(stat => <View key={stat.label} style={styles.stat}>
+              <Ionicons name={stat.icon} size={16} color={colors.primary.base} />
+              <Typography variant="body" color={colors.surface} style={styles.statValue}>{stat.value}</Typography>
+              <Typography variant="caption" color="#C7D0DD">{stat.label}</Typography>
+            </View>)}
+          </View>
+        </>}
+      </View>
+
+      <View style={styles.body}>
+      {loading ? <LockLoader style={{ marginTop: 40 }} label="Loading lock…" /> : <>
+        {lock && <>
+
+        {connected && !lockKnown && <View style={styles.actions}>
+          <TouchableOpacity style={[styles.actionButton, styles.actionPrimary]} accessibilityRole="button" disabled={busy} onPress={() => controlLock('lock')}>
+            <Ionicons name="lock-closed" size={18} color={colors.text} />
+            <Typography variant="body" style={styles.actionLabel}>Lock</Typography>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionButton, styles.actionSecondary]} accessibilityRole="button" disabled={busy} onPress={() => controlLock('unlock')}>
+            <Ionicons name="lock-open" size={18} color={colors.surface} />
+            <Typography variant="body" color={colors.surface} style={styles.actionLabel}>Unlock</Typography>
+          </TouchableOpacity>
+        </View>}
+
+        <View style={styles.menuSection}>
+          <Typography variant="caption" color={colors.disabled} style={styles.sectionLabel}>QUICK ACCESS</Typography>
+          {isOwner && <View style={styles.tiles}>
+            {tile('people-outline', 'Invite', 'Share access with family & friends', colors.primary.lightest, () => openPage('/(app)/lock-invite'))}
+            {tile('settings-outline', 'Settings', 'Rename and manage this lock', '#F0F3F7', () => openPage('/(app)/lock-settings'))}
+          </View>}
+          <View style={styles.menuList}>
+            {menuRow('time-outline', 'Activity Log', 'Review recent lock activity', () => openPage('/(app)/lock-activity'), true)}
           </View>
         </View>
-        {menuRow('list', 'Activity Log', showActivity)}
-        {lock.role === 'owner' && <>
-          {menuRow('person-add', 'Invite Family and Friends', () => { setPanel('invite'); setNotice(''); })}
-          {menuRow('settings-sharp', 'Settings', () => { setPanel('settings'); setNotice(''); })}
-        </>}
-        {panel && <View style={styles.panel}>
-          {panel === 'activity' ? <>
-            <Typography variant="h3">Activity Log</Typography>
-            {busy ? <ActivityIndicator /> : activities.length === 0 && !error ? <Typography variant="body">No activity available.</Typography> : activities.map(activity => <View key={activity.id} style={{ gap: 4 }}>
-              <Typography variant="body">{activity.description}</Typography>
-              <Typography variant="caption" color={colors.secondaryText}>{new Date(activity.timestamp).toLocaleString()}</Typography>
-            </View>)}
-          </> : lock.role === 'owner' && <View style={{ gap: 12 }}>
-            <Typography variant="h3">{panel === 'invite' ? 'Invite a guest' : 'Lock name'}</Typography>
-            <TextField value={panel === 'invite' ? email : name} onChangeText={panel === 'invite' ? setEmail : setName} placeholder={panel === 'invite' ? 'Guest email address' : 'Lock name'} />
-            {panel === 'invite' && <Typography variant="caption">Guest access defaults to one year.</Typography>}
-            <AppButton variant="primarySmall" title={panel === 'invite' ? 'Send invitation' : 'Save'} disabled={busy || !(panel === 'invite' ? email.trim() : name.trim())} onPress={manage} />
-          </View>}
-          <AppButton variant="primarySmall" title="Close" disabled={busy} onPress={() => setPanel(null)} />
-        </View>}
       </>}
-      {!!error && <Typography variant="body" color="#B42318" style={styles.message}>{error}</Typography>}
-      {!!notice && <Typography variant="body" style={styles.message}>{notice}</Typography>}
+      {!!error && <View style={[styles.message, styles.errorMessage]}>
+        <Ionicons name="alert-circle" size={18} color="#B42318" />
+        <Typography variant="caption" color="#B42318" style={{ flex: 1 }}>{error}</Typography>
+      </View>}
       {!lock && <AppButton variant="primarySmall" title="Try again" onPress={() => setRefresh(value => value + 1)} />}
     </>}
+      </View>
     </ScrollView>
     <BottomNavigation items={[
       { key: 'home', label: 'Home', icon: null },
@@ -233,16 +291,57 @@ export default function LockScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F5F5F5' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 20, paddingHorizontal: 24, paddingTop: 60, paddingBottom: 26, backgroundColor: colors.navBarBackground },
-  controlArea: { backgroundColor: '#F5F5F5' },
-  telemetry: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 20 },
-  telemetryItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  circleArea: { alignItems: 'center', paddingTop: 44, paddingBottom: 72, paddingHorizontal: 24 },
-  statusCircle: { width: 180, height: 180, borderRadius: 90, backgroundColor: '#E5E7EB', borderWidth: 6, borderColor: '#F0F1F3', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } },
-  hint: { textAlign: 'center', marginTop: 40 },
-  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 24, paddingHorizontal: 20, paddingVertical: 22, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  panel: { padding: 24, gap: 14, backgroundColor: colors.surface },
-  actions: { flexDirection: 'row', gap: 16, marginTop: 20 },
-  message: { margin: 24 },
+  screen: { flex: 1, backgroundColor: '#F3F5F8' },
+  scroll: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 24 },
+  header: { paddingHorizontal: 16, paddingTop: 54, paddingBottom: 18, gap: 16, backgroundColor: '#26364A', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backButton: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.11)' },
+  headerCopy: { flex: 1, minWidth: 0, gap: 3 },
+  homeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  homeLabel: { flexShrink: 1 },
+  roleBadge: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.13)' },
+  roleBadgeOwner: { backgroundColor: colors.primary.base },
+  roleLabel: { fontWeight: '600' },
+  hero: { alignItems: 'center', paddingTop: 4 },
+  heroStage: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
+  heroPulse: { position: 'absolute', width: 168, height: 168, borderRadius: 84, borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)' },
+  heroPulseConnected: { borderColor: colors.primary.base },
+  heroRing: { width: 168, height: 168, borderRadius: 84, padding: 14, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  heroRingConnected: { backgroundColor: 'rgba(207,255,94,0.14)', borderColor: 'rgba(207,255,94,0.4)' },
+  heroButton: { flex: 1, borderRadius: 70, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  heroButtonConnected: { backgroundColor: colors.primary.base },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: '100%' },
+  statusTitle: { flexShrink: 1, fontWeight: '700' },
+  statusHint: { marginTop: 4, textAlign: 'center' },
+  linkButton: { marginTop: 16, minHeight: 44, paddingHorizontal: 22, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  connectButton: { backgroundColor: colors.primary.base },
+  disconnectButton: { backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusDotConnected: { backgroundColor: colors.primary.base },
+  statusDotDisconnected: { backgroundColor: '#A2AAB5' },
+  stats: { flexDirection: 'row', gap: 8 },
+  stat: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)' },
+  statValue: { fontWeight: '600', marginTop: 2 },
+  body: { paddingHorizontal: 16, paddingTop: 18, gap: 16 },
+  actions: { flexDirection: 'row', gap: 12 },
+  actionButton: { flex: 1, minHeight: 50, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  actionPrimary: { backgroundColor: colors.primary.base },
+  actionSecondary: { backgroundColor: '#26364A' },
+  actionLabel: { fontWeight: '600' },
+  menuSection: { gap: 10 },
+  sectionLabel: { fontSize: 11, letterSpacing: 1.2, fontWeight: '600', marginLeft: 4 },
+  tiles: { flexDirection: 'row', gap: 12 },
+  tile: { flex: 1, minHeight: 132, padding: 14, gap: 4, borderRadius: 20, borderWidth: 1, borderColor: '#E8ECF1', backgroundColor: colors.surface },
+  tileTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
+  tileIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  tileArrow: { transform: [{ rotate: '-45deg' }] },
+  menuList: { borderRadius: 20, borderWidth: 1, borderColor: '#E8ECF1', backgroundColor: colors.surface, overflow: 'hidden' },
+  menuRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  menuRowDivider: { borderBottomWidth: 1, borderBottomColor: '#EEF0F3' },
+  menuIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F3F7' },
+  menuCopy: { flex: 1, gap: 3 },
+  menuTitle: { fontWeight: '600' },
+  message: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 14 },
+  errorMessage: { backgroundColor: '#FEF3F2' },
 });

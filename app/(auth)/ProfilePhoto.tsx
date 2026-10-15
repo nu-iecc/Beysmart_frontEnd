@@ -160,16 +160,16 @@ const ProfilePhoto = () => {
   const visuals = AUTH_VISUALS.profilePhoto;
 
   return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
       {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: colors.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -186,13 +186,13 @@ const ProfilePhoto = () => {
         </TouchableOpacity>
 
         {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
-              width: 96,
-              height: 96,
+              width: 72,
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -201,7 +201,7 @@ const ProfilePhoto = () => {
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {copy.title}
           </Typography>
           

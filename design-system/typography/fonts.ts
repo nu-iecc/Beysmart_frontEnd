@@ -1,11 +1,13 @@
 export const fonts = {
     family: {
       base: 'Inter',
+      medium: 'InterMedium',
+      bold: 'InterBold',
     },
       size: {
-      h1: 32,
-      h2: 30,
-      h3: 28,
+      h1: 28,
+      h2: 24,
+      h3: 18,
       accent: 18,
       body: 16,
       caption: 14,
@@ -18,11 +20,10 @@ export const fonts = {
     },
   
     lineHeight: {
-      h1: 40,
-      h2: 38,
-      h3: 36,
+      h1: 36,
+      h2: 32,
+      h3: 26,
       body: 24,
       caption: 20,
     },
   };
-  

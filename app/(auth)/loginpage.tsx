@@ -62,9 +62,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     padding: Spacing.lg,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   header: {
-    marginTop: Spacing.xl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.lg,
   },
   content: {

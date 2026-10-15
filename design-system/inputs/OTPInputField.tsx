@@ -3,6 +3,7 @@ import { TextInput, View } from 'react-native';
 import { colors } from '../colors/colors';
 import { Spacing } from '../Layout/spacing';
 import { Typography } from '../typography/typography';
+import { fonts } from '../typography/fonts';
 
 interface OTPInputFieldProps {
   length: number;
@@ -117,6 +118,7 @@ const OTPInputField: React.FC<OTPInputFieldProps> = ({
                 height: '100%',
                 textAlign: 'center',
                 fontSize: 24,
+                fontFamily: fonts.family.bold,
                 fontWeight: '700',
                 color: colors.text,
                 borderWidth: 0,

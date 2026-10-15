@@ -36,25 +36,25 @@ type Variant =
       fontSize: fonts.size.h1,
       lineHeight: fonts.lineHeight.h1,
       fontWeight: fonts.weight.bold as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.bold,
     },
     h2: {
       fontSize: fonts.size.h2,
       lineHeight: fonts.lineHeight.h2,
       fontWeight: fonts.weight.bold as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.bold,
     },
     h3: {
       fontSize: fonts.size.h3,
       lineHeight: fonts.lineHeight.h3,
       fontWeight: fonts.weight.medium as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.medium,
     },
     accent: {
       fontSize: fonts.size.accent,
       lineHeight: fonts.lineHeight.body,
       fontWeight: fonts.weight.bold as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.bold,
     },
     body: {
       fontSize: fonts.size.body,
@@ -69,4 +69,3 @@ type Variant =
       fontFamily: fonts.family.base,
     },
   });
-  

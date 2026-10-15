@@ -3,7 +3,6 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView, PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
-import ProfilePage from '../(profile actions)/Profile';
 import { BASE_URL } from '../../constants/api';
 import { colors } from '../../design-system/colors/colors';
 import { BackArrow } from '../../design-system/icons';
@@ -13,14 +12,8 @@ import { BottomNavigation } from '../../design-system/Navigation/BottomNavigatio
 import { Typography } from '../../design-system/typography/typography';
 // Metro config handles BLE mocking when DISABLE_BLE=true
 import bluetoothManager from '../../src/ble';
+import type { BleDevice } from '../../src/ble/types';
 
-// BLE Device interface - matches the interface from bluetoothManager
-interface BleDevice {
-  id: string;
-  name: string;
-  rssi: number;
-  advertising: any;
-}
 interface ScannedDevice {
   id: string;
   name: string;
@@ -31,9 +24,7 @@ interface ScannedDevice {
 
 const AddDevice4 = () => {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [userEmail, setUserEmail] = useState<string>('');
   const [showBluetoothModal, setShowBluetoothModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [showDeviceList, setShowDeviceList] = useState(false);
@@ -62,7 +53,6 @@ const AddDevice4 = () => {
             first_name: userData.first_name || undefined,
             profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
           });
-          setUserEmail(userData.email || '');
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -76,7 +66,7 @@ const AddDevice4 = () => {
     startBluetoothScanning();
     return () => {
       // Cleanup: stop scanning when component unmounts
-      bluetoothManager.destroy();
+      bluetoothManager.destroyBleManager();
     };
   }, []);
 
@@ -196,7 +186,7 @@ const AddDevice4 = () => {
         router.push('/(tabs)/explore');
         break;
       case 'profile':
-        setShowProfile(true);
+        router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
         break;
     }
   };
@@ -336,37 +326,6 @@ const AddDevice4 = () => {
         onTabPress={handleTabPress}
       />
 
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: 0 // We don't have homes data in this context
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
 
       {/* Bluetooth Permission Modal */}
       <Modal

@@ -3,7 +3,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, TouchableOpacity, View } from 'react-native';
-import ProfilePage from '../(profile actions)/Profile';
 
 // Design System Imports
 import { AppButton } from '@/design-system/Buttons/Buttons';
@@ -94,9 +93,7 @@ const AddRoom: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [homes, setHomes] = useState<Home[]>([]);
   const [isAdvancedExpanded, setIsAdvancedExpanded] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [userEmail, setUserEmail] = useState<string>('');
   const FRONTEND_ONLY = false; // Enable backend API calls
 
   // Load homes on component mount
@@ -115,7 +112,6 @@ const AddRoom: React.FC = () => {
             first_name: userData.first_name || undefined,
             profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
           });
-          setUserEmail(userData.email || '');
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -575,42 +571,11 @@ const AddRoom: React.FC = () => {
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            setShowProfile(true);
+            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
           }
         }}
       />
 
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: homes.length
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
     </View>
   );
 };
@@ -644,7 +609,7 @@ const styles = {
     fontWeight: '600' as const,
   },
   stepIndicator: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'right' as const,
   },
   content: {

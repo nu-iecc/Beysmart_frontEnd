@@ -79,16 +79,16 @@ const CompleteRegisteration = () => {
   const visuals = AUTH_VISUALS.completeRegistration;
 
   return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background, width: '100%', maxWidth: 480, alignSelf: 'center' }}>
       {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -99,7 +99,7 @@ const CompleteRegisteration = () => {
         </TouchableOpacity>
 
         {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
               width: 72,
@@ -114,7 +114,7 @@ const CompleteRegisteration = () => {
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {isGuest ? 'Set your password' : copy.title}
           </Typography>
           
@@ -254,4 +254,3 @@ const CompleteRegisteration = () => {
 };
 
 export default CompleteRegisteration;
-

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, TouchableOpacity, View } from 'react-native';
+import { useToast } from '../../components/Toast';
 import { BASE_URL } from '../../constants/api';
 import { colors } from '../../design-system/colors/colors';
 import { BackArrow } from '../../design-system/icons';
@@ -32,6 +33,7 @@ const MyHomes: React.FC = () => {
   const [homes, setHomes] = useState<Home[]>([]);
   const [user, setUser] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const toast = useToast();
 
   // Load user data
   useEffect(() => {
@@ -89,14 +91,12 @@ const MyHomes: React.FC = () => {
 
   // Handle guests button
   const handleGuests = (homeId: number) => {
-    // TODO: Implement guests management
-    console.log('Manage guests for home:', homeId);
+    toast('info', 'Managing home guests is coming soon.');
   };
 
   // Handle settings button
   const handleSettings = (homeId: number) => {
-    // TODO: Implement home settings
-    console.log('Settings for home:', homeId);
+    toast('info', 'Home settings are coming soon.');
   };
 
   // Get status badge for home
@@ -296,7 +296,7 @@ const MyHomes: React.FC = () => {
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            router.push('/(profile actions)/Profile' as any);
+            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
           }
         }}
       />
@@ -335,7 +335,7 @@ const styles = {
     marginBottom: 1,
   },
   headerSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     opacity: 0.8,
   },
   content: {
@@ -395,7 +395,7 @@ const styles = {
     borderRadius: 16,
   },
   statusText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600' as const,
   },
   homeDetails: {

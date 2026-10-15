@@ -84,16 +84,16 @@ import { Typography } from '../../design-system/typography/typography';
   const visuals = AUTH_VISUALS.register;
 
   return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
       {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48, // icon container 48px (6x base unit)
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -104,13 +104,13 @@ import { Typography } from '../../design-system/typography/typography';
         </TouchableOpacity>
 
         {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
-              width: 96, // 12x base unit
-              height: 96,
+              width: 72, // 12x base unit
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -119,7 +119,7 @@ import { Typography } from '../../design-system/typography/typography';
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {copy.title}
           </Typography>
           
@@ -302,7 +302,6 @@ import { Typography } from '../../design-system/typography/typography';
     </View>
   );
 };
-
 
 
 

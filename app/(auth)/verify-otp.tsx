@@ -189,16 +189,16 @@ const VerifyOTPScreen = () => {
   const isOtpComplete = otp.every(digit => digit !== '');
 
   return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
     {/* Header (fixed) */}
-    <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+    <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
       {/* Back Button */}
       <TouchableOpacity
         style={{
-          width: 48, // icon container 48px (6x base unit)
-          height: 48,
+          width: 44,
+          height: 44,
           backgroundColor: AUTH_THEME.surface,
-          borderRadius: 12,
+          borderRadius: 14,
           alignItems: 'center',
           justifyContent: 'center',
           marginBottom: Spacing.lg,
@@ -215,19 +215,19 @@ const VerifyOTPScreen = () => {
         contentContainerStyle={{
           alignItems: 'center',
           paddingHorizontal: Spacing.md,
-          paddingTop: Spacing.xl,
+          paddingTop: Spacing.sm,
           paddingBottom: Spacing.xl,
         }}
         showsVerticalScrollIndicator={false}
       >
         {/* Icon Circle */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.md, width: '100%' }}>
           <View
             style={{
-              width: 96, // 12x base unit
-              height: 96,
+              width: 72, // 12x base unit
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -239,12 +239,16 @@ const VerifyOTPScreen = () => {
           
 
         {/* Title */}
-        <Typography variant="h3" style={{
+        <Typography variant="h1" style={{
           textAlign: 'center',
           marginBottom: Spacing.sm,
           color: AUTH_THEME.text,
         }}>
-          {flow === 'register' ? 'Verify Your Account' : copy.title}
+          {flow === 'register'
+            ? 'Verify Your Account'
+            : flow === 'reset-password'
+              ? email ? 'Verify your email' : 'Verify your phone'
+              : copy.title}
         </Typography>
 
         {/* Subtitle */}
@@ -253,6 +257,7 @@ const VerifyOTPScreen = () => {
           marginBottom: Spacing.xl,
           color: AUTH_THEME.secondaryText,
           paddingHorizontal: Spacing.md,
+          maxWidth: 360,
         }}>
           {flow === 'register' ? 'Enter the latest code sent to your email or WhatsApp. The code expires after 5 minutes.' : phone_number ? (copy.subtitlePhone || '') : (copy.subtitleEmail || '')}
         </Typography>
@@ -260,8 +265,9 @@ const VerifyOTPScreen = () => {
         {/* OTP Input Fields */}
         <View style={{
           width: '100%',
-          marginBottom: Spacing.lg,
-          paddingHorizontal: Spacing.md,
+          marginBottom: Spacing.md,
+          paddingHorizontal: Spacing.xs,
+          maxWidth: 360,
         }}>
           <OTPInputField
             length={4}
@@ -277,7 +283,11 @@ const VerifyOTPScreen = () => {
         {/* Resend Timer */}
         <TouchableOpacity 
           style={{
-            marginBottom: Spacing.lg,
+            marginBottom: Spacing.md,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: Spacing.xs,
+            borderRadius: 14,
+            backgroundColor: '#EEF1F4',
           }} 
           onPress={handleResendCode}
           disabled={!canResend || isSubmitting}
@@ -297,13 +307,15 @@ const VerifyOTPScreen = () => {
 
         {/* Continue Button */}
         {!!otpError && <Typography variant="body" color="#B42318" accessibilityRole="alert" style={{ marginBottom: 16, textAlign: 'center' }}>{otpError}</Typography>}
-        <AppButton
-          variant="primaryLarge"
-          title={isSubmitting ? 'Please wait...' : copy.continueTitle}
-          icon={visuals.actionIcon ? <visuals.actionIcon width={15} height={15} color={AUTH_THEME.text} /> : undefined}
-          onPress={handleVerifyOTP}
-          disabled={!isOtpComplete || isSubmitting}
-        />
+        <View style={{ width: '100%', maxWidth: 360 }}>
+          <AppButton
+            variant="primaryLarge"
+            title={isSubmitting ? 'Please wait...' : copy.continueTitle}
+            icon={visuals.actionIcon ? <visuals.actionIcon width={15} height={15} color={AUTH_THEME.text} /> : undefined}
+            onPress={handleVerifyOTP}
+            disabled={!isOtpComplete || isSubmitting}
+          />
+        </View>
 
         <View style={{ 
           flexDirection: 'row', 

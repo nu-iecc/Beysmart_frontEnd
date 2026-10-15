@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import React from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { AUTH_COPY, AUTH_THEME, AUTH_VISUALS, type AuthScreenCopy } from '../../design-system/auth/constants';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { Spacing } from '../../design-system/Layout/spacing';
@@ -15,62 +15,98 @@ const ResetComplete = () => {
   const visuals = AUTH_VISUALS.resetComplete;
 
   return (
-    <View style={{
-      flex: 1,
-      backgroundColor: AUTH_THEME.background,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: Spacing.lg,
-    }}>
-      {/* Success Icon */}
-      <View style={{
-        marginBottom: Spacing.xl,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <visuals.headerIcon width={80} height={80} color={AUTH_THEME.primary} />
-      </View>
+    <View style={styles.screen}>
+      <View style={styles.card}>
+        <View style={styles.iconBadge}>
+          <visuals.headerIcon width={38} height={38} color={AUTH_THEME.text} />
+        </View>
 
-      {/* Title */}
-      <Typography 
-        variant="h1" 
-        color={AUTH_THEME.text}
-        style={{
-          textAlign: 'center',
-          marginBottom: Spacing.md,
-        }}
-      >
-        {copy.title}
-      </Typography>
+        {visuals.securityIcon && <View style={styles.successMark}>
+          <visuals.securityIcon width={17} height={17} color="#FFFFFF" />
+        </View>}
 
-      {/* Description */}
-      <Typography 
-        variant="body" 
-        color={AUTH_THEME.secondaryText}
-        style={{
-          textAlign: 'center',
-          marginBottom: Spacing.xxl,
-          paddingHorizontal: Spacing.lg,
-        }}
-      >
-        {copy.subtitle}
-      </Typography>
+        <Typography variant="caption" color="#547B25" style={styles.eyebrow}>
+          PASSWORD UPDATED
+        </Typography>
 
-      {/* Button */}
-      <View style={{
-        width: '100%',
-        maxWidth: 300,
-      }}>
-        <AppButton
-          variant="primaryLarge"
-          title={copy.buttons.primaryTitle}
-          onPress={handleGoToLogin}
-        />
+        <Typography variant="h1" color={AUTH_THEME.text} style={styles.title}>
+          {copy.title}
+        </Typography>
+
+        <Typography variant="body" color={AUTH_THEME.secondaryText} style={styles.description}>
+          {copy.subtitle}
+        </Typography>
+
+        <View style={styles.button}>
+          <AppButton
+            variant="primaryLarge"
+            title={copy.buttons.primaryTitle}
+            onPress={handleGoToLogin}
+          />
+        </View>
       </View>
     </View>
   );
 };
 
-
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+    backgroundColor: AUTH_THEME.background,
+  },
+  card: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xl,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#E7EAF0',
+    backgroundColor: AUTH_THEME.surface,
+  },
+  iconBadge: {
+    width: 76,
+    height: 76,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: AUTH_THEME.primary,
+    marginBottom: Spacing.md,
+  },
+  successMark: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -28,
+    marginLeft: 58,
+    borderWidth: 2,
+    borderColor: AUTH_THEME.surface,
+    backgroundColor: '#3A9B65',
+  },
+  eyebrow: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+  },
+  description: {
+    textAlign: 'center',
+    marginBottom: Spacing.xl,
+    paddingHorizontal: Spacing.xs,
+  },
+  button: {
+    width: '100%',
+  },
+});
 
 export default ResetComplete;

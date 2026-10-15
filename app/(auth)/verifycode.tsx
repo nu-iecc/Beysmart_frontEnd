@@ -189,17 +189,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
     width: '100%',
   },
   heroDot: {
@@ -212,7 +216,8 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   title: {
     textAlign: 'center',
@@ -224,17 +229,18 @@ const styles = StyleSheet.create({
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.lg,
   },
   otpBox: {
     width: BOX_SIZE,
     height: BOX_SIZE,
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     textAlign: 'center',
-    fontSize: 20,
+    fontSize: 22,
+    fontWeight: '600',
     color: colors.text,
   },
   footer: {

@@ -240,7 +240,7 @@ const styles = {
      alignItems: 'center' as const,
    },
    roomName: {
-     fontSize: 28,
+     fontSize: 24,
      fontWeight: '600' as const,
      marginBottom: Spacing.sm,
      textAlign: 'center' as const,

@@ -9,14 +9,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, TouchableOpacity, View } from 'react-native';
-import ProfilePage from '../(profile actions)/Profile';
 import { BASE_URL } from '../../constants/api';
 
 const AddDevice3: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [user, setUser] = useState<any>(null);
-  const [showProfile, setShowProfile] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>('');
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -28,7 +25,6 @@ const AddDevice3: React.FC = () => {
             first_name: userData.first_name || undefined,
             profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
           });
-          setUserEmail(userData.email || '');
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -147,42 +143,11 @@ const AddDevice3: React.FC = () => {
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            setShowProfile(true);
+            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
           }
         }}
       />
 
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: 0 // We don't have homes data in this context
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
     </View>
   );
 };
@@ -216,7 +181,7 @@ const styles = {
     fontWeight: '600' as const,
   },
   stepIndicator: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'right' as const,
   },
   content: {
