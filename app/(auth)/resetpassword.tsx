@@ -34,16 +34,16 @@ const ResetPassword = () => {
   const visuals = AUTH_VISUALS.resetPassword;
 
   return (
-    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
       {/* Header */}
-      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 44,
-            height: 44,
+            width: 48,
+            height: 48,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 14,
+            borderRadius: 12,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -54,13 +54,13 @@ const ResetPassword = () => {
         </TouchableOpacity>
 
         {/* Screwdriver Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
           <View
             style={{
-              width: 72,
-              height: 72,
+              width: 96,
+              height: 96,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 36,
+              borderRadius: 48,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -69,7 +69,7 @@ const ResetPassword = () => {
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
             {copy.title}
           </Typography>
           
@@ -80,19 +80,17 @@ const ResetPassword = () => {
       </View>
 
       {/* Content */}
-      <View style={{ flex: 1, ...Padding.screenHorizontal, paddingTop: Spacing.xs }}>
+      <View style={{ flex: 1, ...Padding.screenHorizontal }}>
         {/* Email Option */}
         <TouchableOpacity
           style={{
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 16,
+            borderRadius: 12,
             padding: Spacing.md,
-            marginBottom: Spacing.sm,
+            marginBottom: Spacing.md,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderWidth: 1,
-            borderColor: '#E7EAF0',
           }}
           onPress={handleEmailReset}
         >
@@ -102,7 +100,7 @@ const ResetPassword = () => {
                 width: 48,
                 height: 48,
                 backgroundColor: AUTH_THEME.background,
-                borderRadius: 16,
+                borderRadius: 24,
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginRight: Spacing.md,
@@ -110,10 +108,7 @@ const ResetPassword = () => {
             >
               <EmailIcon width={24} height={24} color={AUTH_THEME.text} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Typography variant="body" style={{ fontWeight: '600' }}>Email</Typography>
-              <Typography variant="caption" color={AUTH_THEME.secondaryText} style={{ marginTop: 3 }}>Get a secure code in your inbox</Typography>
-            </View>
+            <Typography variant="body">Email</Typography>
           </View>
           <View
             style={{
@@ -138,14 +133,12 @@ const ResetPassword = () => {
         <TouchableOpacity
           style={{
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 16,
+            borderRadius: 12,
             padding: Spacing.md,
-            marginBottom: Spacing.sm,
+            marginBottom: Spacing.md,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderWidth: 1,
-            borderColor: '#E7EAF0',
           }}
           onPress={handlePhoneReset}
         >
@@ -155,7 +148,7 @@ const ResetPassword = () => {
                 width: 48,
                 height: 48,
                 backgroundColor: AUTH_THEME.background,
-                borderRadius: 16,
+                borderRadius: 24,
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginRight: Spacing.md,
@@ -163,10 +156,7 @@ const ResetPassword = () => {
             >
               <WhatsappIcon width={24} height={24} color={AUTH_THEME.text} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Typography variant="body" style={{ fontWeight: '600' }}>WhatsApp</Typography>
-              <Typography variant="caption" color={AUTH_THEME.secondaryText} style={{ marginTop: 3 }}>Receive a secure code by phone</Typography>
-            </View>
+            <Typography variant="body">WhatsApp</Typography>
           </View>
           <View
             style={{
@@ -192,7 +182,6 @@ const ResetPassword = () => {
       <View style={{ 
         ...Padding.screenHorizontal, 
         paddingBottom: Spacing.lg,
-        paddingTop: Spacing.sm,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',

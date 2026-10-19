@@ -10,7 +10,7 @@ const path = require('path');
  * 
  * ⚠️ IMPORTANT: Set to FALSE before running `eas build`!
  */
-const DISABLE_BLE = false;  // Set to true for Expo Go testing
+const DISABLE_BLE = false ;  // Set to true for Expo Go testing
 
 const config = getDefaultConfig(__dirname);
 

@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { TouchableOpacity, View } from 'react-native';
-import { BASE_URL } from '../../constants/api';
+import ProfilePage from '../(profile actions)/Profile';
+import { getMediaUrl } from '../../constants/api';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
 import { DEVICE_DETAILS_SETUP } from '../../design-system/home/Constants';
@@ -26,7 +27,9 @@ interface Room {
 }
 
 const AddDevice8 = () => {
+  const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const [deviceName, setDeviceName] = useState('');
   const [selectedHome, setSelectedHome] = useState('');
   const [selectedRoom, setSelectedRoom] = useState('');
@@ -45,8 +48,9 @@ const AddDevice8 = () => {
           const userData = JSON.parse(userDataString);
           setUser({
             first_name: userData.first_name || undefined,
-            profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+            profile_picture: getMediaUrl(userData.profile_picture)
           });
+          setUserEmail(userData.email || '');
         }
 
         // Load the device type that was stored in AddDevice2
@@ -129,6 +133,12 @@ const AddDevice8 = () => {
     setIsCreatingDevice(true);
     
     try {
+      // Get the BLE device ID that was stored when connecting
+      const bleDeviceId = await AsyncStorage.getItem('bleDeviceId');
+      const bleDeviceName = await AsyncStorage.getItem('bleDeviceName');
+      console.log('Retrieved BLE Device ID:', bleDeviceId);
+      console.log('Retrieved BLE Device Name:', bleDeviceName);
+      
       // Map frontend device IDs to backend device_type values
       const deviceTypeMap: { [key: string]: string } = {
         'beylock': 'bey_lock',
@@ -139,20 +149,23 @@ const AddDevice8 = () => {
 
       const backendDeviceType = deviceTypeMap[deviceType] || 'bey_lock';
 
-      // Create device in backend
-      console.log('Creating device with:', {
+      // Create device in backend with BLE device ID
+      const payload: any = {
         name: deviceName,
         device_type: backendDeviceType,
         home: selectedHome,
         room: selectedRoom,
-      });
+      };
+      
+      // Add BLE device ID if available
+      if (bleDeviceId) {
+        payload.ble_device_id = bleDeviceId;
+        console.log('Including BLE device ID in device creation:', bleDeviceId);
+      }
+      
+      console.log('Creating device with:', payload);
 
-      const response = await apiClient.post('home/devices/', {
-        name: deviceName,
-        device_type: backendDeviceType,
-        home: selectedHome,
-        room: selectedRoom,
-      });
+      const response = await apiClient.post('home/devices/', payload);
 
       console.log('Device created successfully:', response.data);
       console.log('Device Token:', response.data.tb_device_token);
@@ -169,9 +182,9 @@ const AddDevice8 = () => {
       // Clear the stored device type as we're done with it
       await AsyncStorage.removeItem('selectedDeviceType');
       
-      // Navigate to device calibration screen with device details
+      // Navigate to device photo screen with device details
       router.push({
-        pathname: '/(devices)/AddDevice9',
+        pathname: '/(devices)/Lock_photo',
         params: {
           deviceName: deviceName,
           deviceLocation: selectedHomeName,
@@ -212,13 +225,13 @@ const AddDevice8 = () => {
         router.push('/(app)/home');
         break;
       case 'devices':
-        router.push('/(tabs)/explore');
+        router.push('/(HomePage_actions)/MyDevices' as any);
         break;
       case 'energy':
-        router.push('/(tabs)/explore');
+        router.push('/(app)/home');
         break;
       case 'profile':
-        router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
+        setShowProfile(true);
         break;
     }
   };
@@ -332,6 +345,37 @@ const AddDevice8 = () => {
         onTabPress={handleTabPress}
       />
 
+      {/* Profile Modal */}
+      <ProfilePage
+        visible={showProfile}
+        userData={user ? {
+          name: user.first_name || null,
+          email: userEmail,
+          profilePicture: user.profile_picture || null,
+          homesCount: homes.length
+        } : undefined}
+        onClose={() => setShowProfile(false)}
+        onAddDevice={() => {
+          setShowProfile(false);
+          router.push('/(devices)/AddDevice2');
+        }}
+        onMyHomes={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/myHomes');
+        }}
+        onInviteFamily={() => {
+          setShowProfile(false);
+          // Handle invite family
+        }}
+        onAccountSettings={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/AccountSettings');
+        }}
+        onHelpSupport={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/Help&support');
+        }}
+      />
     </View>
   );
 };

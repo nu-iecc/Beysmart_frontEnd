@@ -96,11 +96,10 @@ class MockBluetoothManager {
     this.isScanning = false;
   }
 
-  destroyBleManager(): void {
-    this.connectedDevice = null;
-    this.isScanning = false;
+  destroy(): void {
     console.log("🧪 [MOCK] Cleanup");
   }
 }
 
 export default new MockBluetoothManager();
+

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, TouchableOpacity, View } from 'react-native';
+import ProfilePage from '../(profile actions)/Profile';
 // Design System Imports
 import { AppButton } from '@/design-system/Buttons/Buttons';
 import { colors } from '@/design-system/colors/colors';
@@ -11,7 +12,7 @@ import { Dropdown, TextField } from '@/design-system/inputs';
 import { Spacing } from '@/design-system/Layout/spacing';
 import { BottomNavigation } from '@/design-system/Navigation/BottomNavigation';
 import { Typography } from '@/design-system/typography/typography';
-import { BASE_URL } from '../../constants/api';
+import { getMediaUrl } from '../../constants/api';
 import apiClient from '../../utils/api';
 
 // Types
@@ -38,6 +39,8 @@ const AddHome: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [showProfile, setShowProfile] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
   const FRONTEND_ONLY = false; // Enable backend API calls
 
   // Load user data for profile picture
@@ -49,8 +52,9 @@ const AddHome: React.FC = () => {
           const userData = JSON.parse(userDataString);
           setUser({
             first_name: userData.first_name || undefined,
-            profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+            profile_picture: getMediaUrl(userData.profile_picture)
           });
+          setUserEmail(userData.email || '');
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -254,15 +258,46 @@ const AddHome: React.FC = () => {
           if (key === 'home') {
             router.push('/(app)/home');
           } else if (key === 'devices') {
-            router.push('/(app)/home');
+            router.push('/(HomePage_actions)/MyDevices' as any);
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
+            setShowProfile(true);
           }
         }}
       />
 
+      {/* Profile Modal */}
+      <ProfilePage
+        visible={showProfile}
+        userData={user ? {
+          name: user.first_name || null,
+          email: userEmail,
+          profilePicture: user.profile_picture || null,
+          homesCount: 0 // We don't have homes data in this context
+        } : undefined}
+        onClose={() => setShowProfile(false)}
+        onAddDevice={() => {
+          setShowProfile(false);
+          router.push('/(devices)/AddDevice2');
+        }}
+        onMyHomes={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/myHomes');
+        }}
+        onInviteFamily={() => {
+          setShowProfile(false);
+          // Handle invite family
+        }}
+        onAccountSettings={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/AccountSettings');
+        }}
+        onHelpSupport={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/Help&support');
+        }}
+      />
     </View>
   );
 };
@@ -296,7 +331,7 @@ const styles = {
     fontWeight: '600' as const,
   },
   stepIndicator: {
-    fontSize: 12,
+    fontSize: 11,
     textAlign: 'right' as const,
   },
   content: {

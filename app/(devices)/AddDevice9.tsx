@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, TouchableOpacity, View } from 'react-native';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
 import { DEVICE_CALIBRATION } from '../../design-system/home/Constants';
@@ -23,6 +23,7 @@ const AddDevice9 = () => {
   const deviceType = params.deviceType as string || 'beylock';
   const deviceId = params.deviceId as string;
   const deviceToken = params.deviceToken as string;
+  const devicePhoto = params.devicePhoto as string | undefined;
   
   const [isSendingToken, setIsSendingToken] = useState(false);
   
@@ -116,10 +117,11 @@ const AddDevice9 = () => {
 
   const handleCalibrateDevice = () => {
     console.log('Starting device calibration for:', deviceName);
-    console.log('Token available:', deviceToken);
+    console.log('Device ID:', deviceId);
     
-    // Try to send token via Bluetooth first
-    sendTokenViaBluetoothAndProceed();
+    // Skip WiFi/token transmission, go directly to calibration
+    // WiFi credentials screen is no longer needed
+    proceedToCalibration();
   };
 
   // Get the appropriate device icon based on device type
@@ -173,10 +175,19 @@ const AddDevice9 = () => {
 
       {/* Device Card */}
       <View style={styles.deviceCard}>
-        {/* Device Icon */}
-        <View style={styles.deviceIconContainer}>
-          {getDeviceIcon()}
-        </View>
+        {/* Device Icon or Photo */}
+        {devicePhoto ? (
+          <View style={styles.devicePhotoContainer}>
+            <Image
+              source={{ uri: devicePhoto }}
+              style={styles.devicePhoto}
+            />
+          </View>
+        ) : (
+          <View style={styles.deviceIconContainer}>
+            {getDeviceIcon()}
+          </View>
+        )}
 
         {/* Device Name */}
         <Typography variant="h3" color={colors.surface} style={styles.deviceName}>
@@ -255,6 +266,14 @@ const styles = {
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
     marginBottom: Spacing.md,
+  },
+  devicePhotoContainer: {
+    marginBottom: Spacing.md,
+  },
+  devicePhoto: {
+    width: DEVICE_CALIBRATION.DIMENSIONS.DEVICE_ICON_SIZE + Spacing.lg,
+    height: DEVICE_CALIBRATION.DIMENSIONS.DEVICE_ICON_SIZE + Spacing.lg,
+    borderRadius: (DEVICE_CALIBRATION.DIMENSIONS.DEVICE_ICON_SIZE + Spacing.lg) / 2,
   },
   deviceName: {
     fontSize: 20,

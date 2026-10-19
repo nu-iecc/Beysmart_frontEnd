@@ -4,6 +4,7 @@ import { ImageBackground, StyleSheet, View } from 'react-native';
 
 import { LOGIN_STRINGS } from '@/constants/Login';
 import { AppButton, colors, Spacing, Typography } from '@/design-system';
+import { scale, scaleFont } from '@/utils/responsive';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -50,16 +51,17 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'space-between',
-    padding: Spacing.lg,
+    padding: scale(Spacing.lg),
   },
   brandBlock: {
-    marginTop: Spacing.xl,
+    marginTop: scale(Spacing.xl),
   },
   brandTitle: {
     fontFamily: 'Qebram',
+    fontSize: scaleFont(40), // Responsive font size for brand title
   },
   actions: {
-    marginBottom: Spacing.xl,
+    marginBottom: scale(Spacing.xl),
   },
 });
 

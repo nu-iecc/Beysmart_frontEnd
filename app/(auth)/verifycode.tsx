@@ -1,6 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { ERROR_MESSAGES } from '@/constants/errors';
 import { LOGIN_STRINGS } from '@/constants/Login';
@@ -8,7 +9,8 @@ import { AppButton, colors, Spacing, Typography } from '@/design-system';
 import FilledBackIcon from '@/design-system/icons/filled/BackIcon';
 import OtpIcon from '@/design-system/icons/outlined/OtpIcon';
 import { Grid, Padding } from '@/design-system/Layout';
-import { authAPI, VerifyOtpRequest } from '@/services';
+import { authAPI, biometricsService, VerifyOtpRequest } from '@/services';
+import BiometricSetupModal from '../../components/BiometricSetupModal';
 
 const OTP_LENGTH = 4;
 const COUNTDOWN_SECONDS = 60;
@@ -23,6 +25,8 @@ export default function VerifyCodeScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const inputsRef = useRef<Array<TextInput | null>>([]);
+  const [showBiometricModal, setShowBiometricModal] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(false);
 
   useEffect(() => {
     setTimer(COUNTDOWN_SECONDS);
@@ -64,8 +68,47 @@ export default function VerifyCodeScreen() {
       const response = await authAPI.verifyOtp(otpData);
 
       if (response.success) {
-        // OTP verification successful
-        router.push('/(app)/home');
+        // Store user data in AsyncStorage
+        if (response.user) {
+          // Include phone_number from params if not in response
+          const userData = {
+            ...response.user,
+            phone_number: response.user.phone_number || params.phone,
+          };
+          await AsyncStorage.setItem('isAuthenticated', 'true');
+          await AsyncStorage.setItem('userData', JSON.stringify(userData));
+          await AsyncStorage.setItem('loginMethod', 'phone');
+        } else {
+          // Fallback: store minimal user data with phone number
+          await AsyncStorage.setItem('isAuthenticated', 'true');
+          await AsyncStorage.setItem('userData', JSON.stringify({ phone_number: params.phone }));
+          await AsyncStorage.setItem('loginMethod', 'phone');
+        }
+        
+        // Store CSRF token if provided
+        if (response.csrf_token) {
+          await AsyncStorage.setItem('csrftoken', response.csrf_token);
+        }
+        
+        // Reset biometric attempts counter on successful OTP login
+        await biometricsService.resetBiometricAttempts();
+        
+        // Check if this is the first login and if device supports biometrics
+        const isFirstLogin = await biometricsService.isFirstLogin();
+        const canSetupBiometrics = await biometricsService.canSetupBiometrics();
+        
+        console.log('🔐 Biometric setup check in verifycode:', { isFirstLogin, canSetupBiometrics });
+        
+        if (isFirstLogin && canSetupBiometrics) {
+          console.log('🔐 Showing biometric setup modal');
+          // Show biometric setup modal instead of navigating immediately
+          setPendingNavigation(true);
+          setShowBiometricModal(true);
+        } else {
+          console.log('🔐 Skipping biometric setup, navigating to home');
+          // Navigate to home/main app screen
+          router.replace('/(app)/home');
+        }
       } else {
         // OTP verification failed
         setError(response.error || ERROR_MESSAGES.INVALID_OTP);
@@ -88,6 +131,28 @@ export default function VerifyCodeScreen() {
       setIsLoading(false);
     }
   }
+
+  // Biometric setup handlers
+  const handleBiometricEnable = () => {
+    setShowBiometricModal(false);
+    Alert.alert(
+      'Biometrics Enabled',
+      'You can now use biometric authentication to login.',
+      [{ text: 'OK', onPress: () => router.replace('/(app)/home') }]
+    );
+  };
+
+  const handleBiometricSkip = () => {
+    setShowBiometricModal(false);
+    router.replace('/(app)/home');
+  };
+
+  const handleBiometricClose = () => {
+    setShowBiometricModal(false);
+    if (pendingNavigation) {
+      router.replace('/(app)/home');
+    }
+  };
 
   const handleResend = () => {
     if (!canResend) return;
@@ -177,6 +242,15 @@ export default function VerifyCodeScreen() {
           🔒 {LOGIN_STRINGS.phoneLogin.accessibility.securityNote}
         </Typography>
       </View>
+
+      {/* Biometric Setup Modal */}
+      <BiometricSetupModal
+        visible={showBiometricModal}
+        onClose={handleBiometricClose}
+        onEnable={handleBiometricEnable}
+        onSkip={handleBiometricSkip}
+        phoneNumber={params.phone || ''}
+      />
     </View>
   );
 }
@@ -189,21 +263,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
-    width: '100%',
-    maxWidth: 480,
-    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.lg,
+    marginTop: Spacing.xxl,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Spacing.md,
-    marginBottom: Spacing.md,
+    marginTop: Grid.rowGap,
     width: '100%',
   },
   heroDot: {
@@ -216,8 +286,7 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.lg,
+    marginTop: Grid.rowGap,
   },
   title: {
     textAlign: 'center',
@@ -229,18 +298,17 @@ const styles = StyleSheet.create({
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: Spacing.lg,
+    marginTop: Grid.rowGap,
   },
   otpBox: {
     width: BOX_SIZE,
     height: BOX_SIZE,
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     textAlign: 'center',
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 20,
     color: colors.text,
   },
   footer: {

@@ -84,4 +84,4 @@ export const DeviceListItem: React.FC<DeviceListItemProps> = ({
       />
     </View>
   );
-};
+}; 

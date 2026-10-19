@@ -58,16 +58,16 @@ const ResetByEmail = () => {
   const copy = AUTH_COPY.resetByEmail as AuthScreenCopy;
   const visuals = AUTH_VISUALS.resetByEmail;
   return (
-    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
       {/* Header */}
-      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 44,
-            height: 44,
+            width: 48,
+            height: 48,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 14,
+            borderRadius: 12,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -78,13 +78,13 @@ const ResetByEmail = () => {
         </TouchableOpacity>
 
         {/* Email Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
           <View
             style={{
-              width: 72,
-              height: 72,
+              width: 96,
+              height: 96,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 36,
+              borderRadius: 48,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -93,7 +93,7 @@ const ResetByEmail = () => {
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
             {copy.title}
           </Typography>
           
@@ -110,7 +110,7 @@ const ResetByEmail = () => {
         style={{ flex: 1 }}
         contentContainerStyle={{
           ...Padding.screenHorizontal,
-          paddingBottom: Spacing.lg,
+          paddingBottom: Spacing.xl,
         }}
       >
         {/* Email Input Field */}
@@ -132,7 +132,7 @@ const ResetByEmail = () => {
       </ScrollView>
 
       {/* Footer */}
-      <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg, paddingTop: Spacing.sm }}>
+      <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg }}>
         <AppButton
           variant={isDisabled ? 'primaryDisabled' : 'primaryLarge'}
           title={copy.buttons.primaryTitle}
@@ -163,6 +163,7 @@ const ResetByEmail = () => {
 };
 
 export default ResetByEmail;
+
 
 
 

@@ -104,10 +104,10 @@ const EnterPassword = () => {
         <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
           <View
             style={{
-              width: 72,
-              height: 72,
+              width: 96,
+              height: 96,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 36,
+              borderRadius: 48,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,

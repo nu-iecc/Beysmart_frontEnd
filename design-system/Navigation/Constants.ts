@@ -18,8 +18,8 @@ export const TOP_NAVIGATION = {
     MIN_HEIGHT: 88,
     HOME_SELECTOR: {
       MIN_WIDTH: 170,
-      HEIGHT: 44,
-      BORDER_RADIUS: 12,
+      HEIGHT: 32,
+      BORDER_RADIUS: 8,
     },
     DROPDOWN: {
       MAX_HEIGHT: 200,
@@ -102,37 +102,37 @@ export const BOTTOM_NAVIGATION = {
   
   // Dimensions
   DIMENSIONS: {
-    CONTAINER_HEIGHT: 72,
-    TOP_RADIUS: 24,
-    INDICATOR: {
-      WIDTH: 28,
-      HEIGHT: 3,
+    CONTAINER_HEIGHT: 95,
+    ICON_CONTAINER: {
+      SIZE: 48,
+      BORDER_RADIUS: 24,
     },
-    ICON_BOX: 28,
-    AVATAR: {
-      SIZE: 24,
-      RING: 2,
-    },
+    ICON_SIZE: 20,
   },
-
+  
   // Styling
   STYLING: {
     ACTIVE_OPACITY: 0.8,
     TEXT: {
+      ACTIVE_OPACITY: 1,
+      INACTIVE_OPACITY: 0.4,
       ACTIVE_FONT_WEIGHT: '600',
       INACTIVE_FONT_WEIGHT: '400',
     },
   },
-
+  
   // Padding and margins
   SPACING: {
     CONTAINER: {
-      TOP: 0,
-      HORIZONTAL: 12,
+      TOP: 10,
+      RIGHT: 18,
       BOTTOM: 10,
+      LEFT: 18,
     },
-    ICON_TOP: 10,
-    LABEL_TOP: 4,
+    ICON_CONTAINER: {
+      TOP: 10,
+      BOTTOM: 8,
+    },
   },
 } as const;
 

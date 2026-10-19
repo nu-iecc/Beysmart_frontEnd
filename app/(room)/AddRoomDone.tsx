@@ -59,7 +59,7 @@ const AddRoomDone = () => {
   };
 
   const handleAddDevices = () => {
-    // Navigate to add device screen which we will create later
+    router.push('/(devices)/AddDevice2' as never);
   };
 
   const handleGoToHomepage = () => {
@@ -240,7 +240,7 @@ const styles = {
      alignItems: 'center' as const,
    },
    roomName: {
-     fontSize: 24,
+     fontSize: 28,
      fontWeight: '600' as const,
      marginBottom: Spacing.sm,
      textAlign: 'center' as const,

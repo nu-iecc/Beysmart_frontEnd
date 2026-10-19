@@ -134,6 +134,7 @@ export const AccountSettingsConstants = {
 
   ACTIONS: {
     EXPORT_DATA: 'Export My Data',
+    LOGOUT: 'Logout',
     SIGN_OUT_ALL: 'Sign Out All Devices',
     DELETE_ACCOUNT: 'Delete Account',
   },
@@ -170,6 +171,40 @@ export const AccountSettingsConstants = {
     BACK_HINT: 'Return to previous screen',
     SAVE: 'Save profile changes',
   },
+};
+
+export const MyDevicesConstants = {
+  // Page content
+  title: 'My Devices',
+  subtitle: 'Manage your smart home',
+  addNewDevice: 'Add New Device',
+  
+  // Device card content
+  controlButton: 'Control',
+  devicesLabel: 'devices',
+  
+  // Status badges
+  online: 'Online',
+  offline: 'Offline',
+  locked: 'Locked',
+  unlocked: 'Unlocked',
+  
+  // Accessibility labels
+  backButtonAccessibilityLabel: 'Go back',
+  backButtonAccessibilityHint: 'Return to previous screen',
+  deviceCardAccessibilityLabel: 'Device card',
+  deviceCardAccessibilityHint: 'Tap to view device details',
+  controlButtonAccessibilityLabel: 'Control device',
+  controlButtonAccessibilityHint: 'Tap to control this device',
+  addNewDeviceAccessibilityLabel: 'Add new device',
+  addNewDeviceAccessibilityHint: 'Tap to add a new device',
+  
+  // Error messages
+  errorLoadingDevices: 'Failed to load devices. Please try again.',
+  noDevicesMessage: 'No devices found. Add your first device to get started.',
+  
+  // Loading message
+  loadingMessage: 'Loading devices...',
 };
 
 export const HelpSupportConstants = {

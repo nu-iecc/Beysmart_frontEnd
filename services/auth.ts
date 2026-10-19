@@ -1,85 +1,175 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import apiClient from '@/utils/api';
+import { API_ENDPOINTS } from '@/constants/api';
+import { SUCCESS_MESSAGES } from '@/constants/errors';
+import apiClient from './api';
 
-export interface LoginRequest { email: string; password: string }
-export interface PhoneLoginRequest { phone_number: string }
-export interface VerifyOtpRequest { phone_number: string; otp: string }
+// Types for authentication
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
 
-export interface AuthUser {
-  id: string | number;
-  email?: string;
-  phone_number?: string;
-  first_name?: string;
-  last_name?: string;
-  profile_picture?: string | null;
-  email_verified?: boolean;
-  is_verified?: boolean;
+export interface PhoneLoginRequest {
+  phone_number: string;
+}
+
+export interface VerifyOtpRequest {
+  phone_number: string;
+  otp: string;
 }
 
 export interface AuthResponse {
   success: boolean;
   message?: string;
-  user?: AuthUser;
+  user?: {
+    id: string;
+    email?: string;
+    phone_number?: string;
+    is_verified: boolean;
+    first_name?: string;
+    last_name?: string;
+    profile_picture?: string | null;
+    user_type?: string;
+    is_approved?: boolean;
+    email_verified?: boolean;
+  };
   error?: string;
   email_verification_required?: boolean;
+  csrf_token?: string;
 }
 
-type BackendAuthResponse = Omit<AuthResponse, 'success'> & {
-  success?: boolean;
-  csrf_token?: string;
+// Helper function to store user data (optional for caching)
+const storeUserData = async (user: any) => {
+  // Optional: Store user data locally for caching
+  // This is not required for Django sessions but can be useful
+  try {
+    // You can use AsyncStorage here if you want to cache user data
+    // For now, we'll just keep it simple
+  } catch (error) {
+    // Handle error silently
+  }
 };
 
-async function cacheSession(data: BackendAuthResponse): Promise<void> {
-  // Cookies authenticate requests; storage only caches profile and CSRF data.
-  try {
-    if (data.user) await AsyncStorage.setItem('userData', JSON.stringify(data.user));
-    if (data.csrf_token) await AsyncStorage.setItem('csrftoken', data.csrf_token);
-  } catch {
-    console.warn('Unable to cache session data.');
-  }
-}
-
-async function authenticateRequest(path: string, payload: object, requireUser: boolean): Promise<AuthResponse> {
-  try {
-    const response = await apiClient.post<BackendAuthResponse>(path, payload);
-    const data = response.data;
-    const success = !data.error && (data.success === true ||
-      (data.success === undefined && response.status === 200 && (!requireUser || !!data.user)));
-    if (success && data.user) await cacheSession(data);
-    return { ...data, success };
-  } catch (error: unknown) {
-    const data = (error as { response?: { data?: BackendAuthResponse } }).response?.data;
-    if (data && typeof data === 'object') return { ...data, success: false };
-    throw error;
-  }
-}
-
+// Authentication API functions
 export const authAPI = {
-  login: (credentials: LoginRequest): Promise<AuthResponse> =>
-    authenticateRequest('auth/login/', credentials, true),
-  phoneLogin: (data: PhoneLoginRequest): Promise<AuthResponse> =>
-    authenticateRequest('auth/phone-login/', data, false),
-  verifyOtp: (data: VerifyOtpRequest): Promise<AuthResponse> =>
-    authenticateRequest('auth/verify-otp/', data, true),
-
-  logout: async (): Promise<void> => {
-    // Keep the local session if the server fails to log out.
-    await apiClient.post('auth/logout/');
-    await AsyncStorage.multiRemove(['userData', 'csrftoken', 'isAuthenticated', 'loginMethod']);
+  // Email login
+  login: async (credentials: LoginRequest): Promise<AuthResponse> => {
+    try {
+      const response = await apiClient.post(API_ENDPOINTS.LOGIN, credentials);
+      const authResponse = response.data;
+      
+      // Django session is automatically created and managed
+      // Optional: Store user data for caching
+      if (authResponse.success && authResponse.user) {
+        await storeUserData(authResponse.user);
+      }
+      
+      return authResponse;
+    } catch (error: any) {
+      // Handle axios error and return consistent format
+      if (error.response?.data) {
+        return error.response.data;
+      }
+      throw error;
+    }
   },
 
+  // Phone login (send OTP)
+  phoneLogin: async (phoneData: PhoneLoginRequest): Promise<AuthResponse> => {
+    try {
+      const response = await apiClient.post(API_ENDPOINTS.PHONE_LOGIN, phoneData);
+      
+      // Handle different response formats from Django
+      const data = response.data;
+      
+      // If Django returns a simple success response without 'success' field
+      if (response.status === 200 && !data.hasOwnProperty('success')) {
+        return {
+          success: true,
+          message: data.message || SUCCESS_MESSAGES.OTP_SENT,
+          user: data.user || undefined
+        };
+      }
+      
+      return data;
+    } catch (error: any) {
+      if (error.response?.data) {
+        return error.response.data;
+      }
+      throw error;
+    }
+  },
+
+  // Verify OTP
+  verifyOtp: async (otpData: VerifyOtpRequest): Promise<AuthResponse> => {
+    try {
+      const response = await apiClient.post(API_ENDPOINTS.VERIFY_OTP, otpData);
+      
+      // Handle different response formats from Django
+      const data = response.data;
+      
+      // If Django returns a simple success response without 'success' field
+      if (response.status === 200 && !data.hasOwnProperty('success')) {
+        const authResponse: AuthResponse = {
+          success: true,
+          message: data.message || SUCCESS_MESSAGES.OTP_VERIFIED,
+          user: data.user || undefined,
+          csrf_token: data.csrf_token || undefined,
+        };
+        
+        // Django session is automatically created and managed
+        // Optional: Store user data for caching
+        if (authResponse.user) {
+          await storeUserData(authResponse.user);
+        }
+        
+        return authResponse;
+      }
+      
+      // Django session is automatically created and managed
+      // Optional: Store user data for caching
+      if (data.success && data.user) {
+        await storeUserData(data.user);
+      }
+      
+      return data;
+    } catch (error: any) {
+      if (error.response?.data) {
+        return error.response.data;
+      }
+      throw error;
+    }
+  },
+
+  // Logout
+  logout: async (): Promise<void> => {
+    try {
+      // Call Django logout endpoint to clear session
+      await apiClient.post(API_ENDPOINTS.LOGOUT);
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Even if logout fails, the session will expire
+    }
+  },
+
+  // Check if user is authenticated by making a request to a protected endpoint
   isAuthenticated: async (): Promise<boolean> => {
     try {
-      await apiClient.get('auth/profile/');
-      return true;
-    } catch {
+      // Make a request to a protected endpoint to check session
+      const response = await apiClient.get(API_ENDPOINTS.USER_PROFILE);
+      return response.status === 200;
+    } catch (error) {
       return false;
     }
   },
 
-  getCurrentUser: async (): Promise<AuthUser> => {
-    const { data } = await apiClient.get<AuthUser>('auth/profile/');
-    return data;
+  // Get current user data
+  getCurrentUser: async () => {
+    try {
+      const response = await apiClient.get(API_ENDPOINTS.USER_PROFILE);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   },
 };
 

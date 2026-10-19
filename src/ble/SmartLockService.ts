@@ -13,22 +13,21 @@ import {
   isConnected,
   readCharacteristic,
   scanForDevices,
+  setDisconnectionCallback,
   stopScan,
   subscribeToNotifications,
-  unsubscribeFromNotifications,
   writeAndWaitForStateUpdate,
   writeCharacteristic
 } from './bluetoothmanager';
 import {
   BleDevice,
   CalibrationProcessState,
-  CalibrationStep,
   DoorState,
   LockCommand,
   LockingProcessState,
   LockPosition,
   SmartLockState,
-  WifiConnectionState,
+  WifiConnectionState
 } from './types';
 
 /**
@@ -43,6 +42,7 @@ export type SmartLockEventType =
   | 'calibrationStateChanged'
   | 'connected'
   | 'disconnected'
+  | 'initialStateLoaded'
   | 'error';
 
 export type SmartLockEventCallback = (data: any) => void;
@@ -54,6 +54,8 @@ class SmartLockService {
   private static instance: SmartLockService;
   private eventListeners: Map<SmartLockEventType, Set<SmartLockEventCallback>> = new Map();
   private subscriptionIds: string[] = [];
+  private hasLockPositionSubscription: boolean = false; // Track if 0xAA01 is subscribed
+  private hasBatterySubscription: boolean = false; // Track if 0xCC01 is subscribed
   private currentState: SmartLockState = {
     lockPosition: LockPosition.UNKNOWN,
     doorState: DoorState.UNKNOWN,
@@ -62,7 +64,14 @@ class SmartLockService {
     lastUpdated: new Date(),
   };
 
-  private constructor() {}
+  private constructor() {
+    // Register callback to handle unexpected disconnections from bluetoothmanager
+    setDisconnectionCallback(() => {
+      console.log('🔔 SmartLockService: Received disconnection notification from BLE layer');
+      this.currentState.isConnected = false;
+      this.emit('disconnected', {});
+    });
+  }
 
   /**
    * Get singleton instance
@@ -141,14 +150,21 @@ class SmartLockService {
     try {
       await connectToDevice(deviceId);
       
-      // Setup state subscriptions
-      await this.setupStateSubscriptions();
-      
-      // Read initial state
+      console.log('📖 Step 1: Reading initial lock state from device...');
+      // FIRST: Read initial state from the device (0xAA01, 0xAA02, 0xCC01)
       await this.refreshState();
       
+      console.log('🔔 Step 2: Setting up lock position subscription (0xAA01)...');
+      // THEN: Setup state subscriptions for real-time updates
+      await this.setupStateSubscriptions();
+      
       this.currentState.isConnected = true;
+      
+      // Emit initial state loaded event
+      console.log('✅ Connection complete. Initial state:', 
+        this.currentState.lockPosition === LockPosition.CLOSED_LOCKED_POSITION ? 'LOCKED' : 'UNLOCKED');
       this.emit('connected', { deviceId });
+      this.emit('initialStateLoaded', { state: { ...this.currentState } });
       
       return true;
     } catch (error) {
@@ -196,50 +212,87 @@ class SmartLockService {
 
   /**
    * Setup subscriptions for state changes
+   * Subscribes to Lock Position (0xAA01) and Battery Level (0xCC01) for real-time updates
+   * Process State (0xAA04) is subscribed only when sending lock/unlock commands
    */
-  private async setupStateSubscriptions(): Promise<void> {
+  public async setupStateSubscriptions(): Promise<void> {
     try {
-      // Lock Position notifications
-      const lockPosSubId = await subscribeToNotifications(
-        FULL_UUIDS.LOCK_CONTROL_SERVICE,
-        FULL_UUIDS.LOCK_POSITION,
-        (data) => {
-          const position = data.length > 0 ? data[0] as LockPosition : LockPosition.UNKNOWN;
-          this.currentState.lockPosition = position;
-          this.currentState.lastUpdated = new Date();
-          this.emit('lockPositionChanged', { lockPosition: position });
-        }
-      );
-      this.subscriptionIds.push(lockPosSubId);
+      // Check if we already have lock position subscription active
+      if (this.hasLockPositionSubscription && this.hasBatterySubscription) {
+        console.log('✅ Lock Position and Battery subscriptions already active, skipping setup');
+        return;
+      }
 
-      // Locking Process State notifications
-      const lockProcessSubId = await subscribeToNotifications(
-        FULL_UUIDS.LOCK_CONTROL_SERVICE,
-        FULL_UUIDS.LOCKING_PROCESS_STATE,
-        (data) => {
-          const state = data.length > 0 ? data[0] as LockingProcessState : LockingProcessState.UNKNOWN;
-          this.emit('lockingProcessStateChanged', { state });
-        }
-      );
-      this.subscriptionIds.push(lockProcessSubId);
+      // Lock Position notifications (0xAA01) - ALWAYS subscribed for real-time lock state
+      if (!this.hasLockPositionSubscription) {
+        const lockPosSubId = await subscribeToNotifications(
+          FULL_UUIDS.LOCK_CONTROL_SERVICE,
+          FULL_UUIDS.LOCK_POSITION,
+          (data) => {
+            const position = data.length > 0 ? data[0] as LockPosition : LockPosition.UNKNOWN;
+            console.log(`🔐 [0xAA01 - LOCK POSITION] notification: ${position} (2=LOCKED, 3=UNLOCKED, 4=JAMMED_LOCKED, 5=JAMMED_UNLOCKED)`);
+            this.currentState.lockPosition = position;
+            this.currentState.lastUpdated = new Date();
+            console.log(`📢 Emitting lockPositionChanged event with position: ${position}`);
+            this.emit('lockPositionChanged', { lockPosition: position });
+          }
+        );
+        this.subscriptionIds.push(lockPosSubId);
+        this.hasLockPositionSubscription = true;
+        console.log('✅ Lock Position subscription setup complete (0xAA01)');
+      }
 
-      console.log('✅ State subscriptions setup complete');
+      // Battery Level notifications (0xCC01) - subscribed for real-time battery updates
+      if (!this.hasBatterySubscription) {
+        const batterySubId = await subscribeToNotifications(
+          FULL_UUIDS.BATTERY_SERVICE,
+          FULL_UUIDS.BATTERY_LEVEL,
+          (data) => {
+            const level = data.length > 0 ? data[0] : 0;
+            console.log(`🔋 [0xCC01 - BATTERY LEVEL] notification: ${level}% (raw data: [${Array.from(data).join(', ')}])`);
+            this.currentState.batteryLevel = level;
+            this.currentState.lastUpdated = new Date();
+            console.log(`📢 Emitting batteryLevelChanged event with level: ${level}%`);
+            this.emit('batteryLevelChanged', { batteryLevel: level });
+          }
+        );
+        this.subscriptionIds.push(batterySubId);
+        this.hasBatterySubscription = true;
+        console.log('✅ Battery Level subscription setup complete (0xCC01)');
+      }
+
+      console.log('ℹ️  Process State (0xAA04) will be subscribed only during lock/unlock operations');
     } catch (error) {
+    this.hasBatterySubscription = false; // Reset flag
       console.error('Failed to setup state subscriptions:', error);
     }
+  }
+
+  /**
+   * Check if lock position subscriptions are active
+   */
+  public hasActiveSubscriptions(): boolean {
+    return this.subscriptionIds.length > 0;
   }
 
   /**
    * Cleanup all subscriptions
    */
   private async cleanupSubscriptions(): Promise<void> {
-    for (const subId of this.subscriptionIds) {
-      try {
-        await unsubscribeFromNotifications(subId);
-      } catch (error) {
-        console.error(`Failed to unsubscribe ${subId}:`, error);
-      }
-    }
+    // Just clear the subscription IDs array without calling unsubscribe
+    // The disconnect will automatically invalidate all subscriptions
+    // Calling .remove() before disconnect causes native crashes
+    console.log(`🔕 Clearing ${this.subscriptionIds.length} subscription ID(s)`);
+    this.subscriptionIds = [];
+    this.hasLockPositionSubscription = false; // Reset flag
+  }
+
+  /**
+   * Clear calibration subscriptions after calibration completes
+   * This allows lock position subscriptions to be set up when navigating to lock screen
+   */
+  public clearCalibrationSubscriptions(): void {
+    console.log(`🔕 Clearing calibration subscriptions (had ${this.subscriptionIds.length})`);
     this.subscriptionIds = [];
   }
 
@@ -248,6 +301,7 @@ class SmartLockService {
    */
   public async refreshState(): Promise<SmartLockState> {
     try {
+      console.log('📖 Reading lock position from 0xAA01...');
       // Read lock position
       const lockPosData = await readCharacteristic(
         FULL_UUIDS.LOCK_CONTROL_SERVICE,
@@ -256,7 +310,10 @@ class SmartLockService {
       this.currentState.lockPosition = lockPosData.length > 0 
         ? lockPosData[0] as LockPosition 
         : LockPosition.UNKNOWN;
+      
+      console.log(`✅ Initial lock position: ${this.currentState.lockPosition} (2=LOCKED, 3=UNLOCKED)`);
 
+      console.log('📖 Reading door state from 0xAA02...');
       // Read door state
       const doorStateData = await readCharacteristic(
         FULL_UUIDS.LOCK_CONTROL_SERVICE,
@@ -266,16 +323,23 @@ class SmartLockService {
         ? doorStateData[0] as DoorState 
         : DoorState.UNKNOWN;
 
+      console.log('📖 Reading battery level from 0xCC01...');
       // Read battery level
       const batteryData = await readCharacteristic(
         FULL_UUIDS.BATTERY_SERVICE,
         FULL_UUIDS.BATTERY_LEVEL
       );
       this.currentState.batteryLevel = batteryData.length > 0 ? batteryData[0] : 0;
+      console.log(`🔋 Battery level from device: ${this.currentState.batteryLevel}% (raw: [${Array.from(batteryData).join(', ')}])`);
 
       this.currentState.lastUpdated = new Date();
       this.currentState.isConnected = true;
 
+      console.log(`✅ State refresh complete. Battery: ${this.currentState.batteryLevel}%`);
+      
+      // Emit initialStateLoaded event so UI can update
+      this.emit('initialStateLoaded', { state: { ...this.currentState } });
+      
       return { ...this.currentState };
     } catch (error) {
       console.error('Failed to refresh state:', error);
@@ -310,28 +374,26 @@ class SmartLockService {
   }
 
   /**
-   * Send lock command and wait for result
+   * Send lock command
+   * The lock position changes will come via 0xAA01 notifications
    */
   private async sendLockCommand(command: LockCommand): Promise<LockingProcessState> {
     try {
-      const response = await writeAndWaitForStateUpdate(
+      console.log(`🔒 Sending lock command: ${command === LockCommand.LOCK ? 'LOCK (2)' : 'UNLOCK (3)'}`);
+      
+      // Send the lock/unlock command to 0xAA03
+      await writeCharacteristic(
         FULL_UUIDS.LOCK_CONTROL_SERVICE,
         FULL_UUIDS.LOCK_CONTROL,
-        FULL_UUIDS.LOCK_CONTROL_SERVICE,
-        FULL_UUIDS.LOCKING_PROCESS_STATE,
-        new Uint8Array([command]),
-        LockingProcessState.SUCCESS,
-        15000
+        new Uint8Array([command])
       );
 
-      const result = response.length > 0 
-        ? response[0] as LockingProcessState 
-        : LockingProcessState.UNKNOWN;
-
-      // Refresh state after command
-      await this.refreshState();
-
-      return result;
+      console.log(`✅ Lock command sent to 0xAA03 - waiting for position update from 0xAA01`);
+      
+      // The actual state change will be detected via lockPositionChanged event from 0xAA01
+      // Just return success - the UI will update when it receives the position notification
+      return LockingProcessState.SUCCESS;
+      
     } catch (error) {
       console.error('Lock command failed:', error);
       this.emit('error', { type: 'lockCommand', error });
@@ -442,16 +504,33 @@ class SmartLockService {
   ): Promise<WifiConnectionState> {
     return new Promise(async (resolve) => {
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
-      let subId: string | null = null;
+      let resolved = false;
+
+      // Safe resolve helper - prevents double resolution
+      // NOTE: We do NOT unsubscribe here because react-native-ble-plx has a native bug
+      // that crashes when canceling subscriptions. The subscription will be cleaned up
+      // when the device disconnects or BLE manager is destroyed.
+      const safeResolve = (state: WifiConnectionState) => {
+        if (resolved) return;
+        resolved = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        console.log('📡 WiFi connection result:', state);
+        resolve(state);
+      };
 
       try {
         console.log('📡 Step 1: Subscribing to WiFi state notifications...');
         
         // Subscribe to WiFi connection state notifications FIRST
-        subId = await subscribeToNotifications(
+        const subId = await subscribeToNotifications(
           FULL_UUIDS.CONFIGURATION_SERVICE,
           FULL_UUIDS.WIFI_CONNECTION_STATE,
-          async (data) => {
+          (data) => {
+            if (resolved) return; // Ignore if already resolved
+            
             const state = data.length > 0 ? data[0] as WifiConnectionState : WifiConnectionState.DISCONNECTED;
             console.log('📡 WiFi state notification received:', state, this.getWifiStateName(state));
             
@@ -460,20 +539,10 @@ class SmartLockService {
             // Check for final states
             if (state === WifiConnectionState.SUCCESS) {
               console.log('✅ WiFi connected successfully!');
-              if (timeoutId) clearTimeout(timeoutId);
-              if (subId) {
-                await unsubscribeFromNotifications(subId);
-                subId = null;
-              }
-              resolve(WifiConnectionState.SUCCESS);
+              safeResolve(WifiConnectionState.SUCCESS);
             } else if (state === WifiConnectionState.FAILED) {
               console.log('❌ WiFi connection failed!');
-              if (timeoutId) clearTimeout(timeoutId);
-              if (subId) {
-                await unsubscribeFromNotifications(subId);
-                subId = null;
-              }
-              resolve(WifiConnectionState.FAILED);
+              safeResolve(WifiConnectionState.FAILED);
             } else if (state === WifiConnectionState.IN_PROGRESS) {
               console.log('⏳ WiFi connection in progress...');
               // Keep waiting for final state
@@ -483,13 +552,9 @@ class SmartLockService {
         this.subscriptionIds.push(subId);
 
         // Set timeout for WiFi connection
-        timeoutId = setTimeout(async () => {
+        timeoutId = setTimeout(() => {
           console.log('⏰ WiFi connection timeout after', timeout, 'ms');
-          if (subId) {
-            await unsubscribeFromNotifications(subId);
-            subId = null;
-          }
-          resolve(WifiConnectionState.FAILED);
+          safeResolve(WifiConnectionState.FAILED);
         }, timeout);
 
         // Now write the credentials
@@ -518,13 +583,8 @@ class SmartLockService {
         
       } catch (error: any) {
         console.error('❌ WiFi credentials send error:', error);
-        if (timeoutId) clearTimeout(timeoutId);
-        if (subId) {
-          await unsubscribeFromNotifications(subId);
-          subId = null;
-        }
         this.emit('error', { type: 'wifiCredentials', error });
-        resolve(WifiConnectionState.FAILED);
+        safeResolve(WifiConnectionState.FAILED);
       }
     });
   }
@@ -586,14 +646,31 @@ class SmartLockService {
   ): Promise<WifiConnectionState> {
     return new Promise(async (resolve) => {
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
-      let subId: string | null = null;
+      let resolved = false;
+
+      // Safe resolve helper - prevents double resolution
+      // NOTE: We do NOT unsubscribe here because react-native-ble-plx has a native bug
+      // that crashes when canceling subscriptions. The subscription will be cleaned up
+      // when the device disconnects or BLE manager is destroyed.
+      const safeResolve = (state: WifiConnectionState) => {
+        if (resolved) return;
+        resolved = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        console.log('📡 Platform connection result:', state);
+        resolve(state);
+      };
 
       try {
         // Subscribe to WiFi state changes first
-        subId = await subscribeToNotifications(
+        const subId = await subscribeToNotifications(
           FULL_UUIDS.CONFIGURATION_SERVICE,
           FULL_UUIDS.WIFI_CONNECTION_STATE,
-          async (data) => {
+          (data) => {
+            if (resolved) return; // Ignore if already resolved
+            
             const state = data.length > 0 ? data[0] as WifiConnectionState : WifiConnectionState.DISCONNECTED;
             console.log('📡 WiFi state notification:', state);
             
@@ -601,23 +678,18 @@ class SmartLockService {
 
             // Check if connected to platform
             if (state === WifiConnectionState.CONNECTED_TO_PLATFORM) {
-              if (timeoutId) clearTimeout(timeoutId);
-              if (subId) await unsubscribeFromNotifications(subId);
-              resolve(WifiConnectionState.CONNECTED_TO_PLATFORM);
+              safeResolve(WifiConnectionState.CONNECTED_TO_PLATFORM);
             } else if (state === WifiConnectionState.FAILED) {
-              if (timeoutId) clearTimeout(timeoutId);
-              if (subId) await unsubscribeFromNotifications(subId);
-              resolve(WifiConnectionState.FAILED);
+              safeResolve(WifiConnectionState.FAILED);
             }
           }
         );
         this.subscriptionIds.push(subId);
 
         // Set timeout
-        timeoutId = setTimeout(async () => {
+        timeoutId = setTimeout(() => {
           console.log('📡 Platform connection timeout');
-          if (subId) await unsubscribeFromNotifications(subId);
-          resolve(WifiConnectionState.FAILED);
+          safeResolve(WifiConnectionState.FAILED);
         }, timeout);
 
         // Write the token
@@ -630,9 +702,7 @@ class SmartLockService {
 
       } catch (error) {
         console.error('Platform token with notification failed:', error);
-        if (timeoutId) clearTimeout(timeoutId);
-        if (subId) await unsubscribeFromNotifications(subId);
-        resolve(WifiConnectionState.FAILED);
+        safeResolve(WifiConnectionState.FAILED);
       }
     });
   }
@@ -815,101 +885,206 @@ class SmartLockService {
   // ============================================================================
 
   /**
-   * Start calibration process
+   * Step 1: Enter calibration mode and subscribe to state changes
+   * Write 1 to 0xDD01 (Calibration Control) to enter calibration mode
    */
-  public async startCalibration(): Promise<boolean> {
+  public async enterCalibrationMode(): Promise<boolean> {
     try {
-      // Subscribe to calibration state
+      console.log('📝 Step 1: Entering calibration mode...');
+      
+      // Subscribe to calibration state (0xDD04) to receive status updates
       const calSubId = await subscribeToNotifications(
         FULL_UUIDS.CALIBRATION_SERVICE,
         FULL_UUIDS.CALIBRATION_PROCESS_STATE,
         (data) => {
           const state = data.length > 0 ? data[0] as CalibrationProcessState : CalibrationProcessState.UNKNOWN;
+          console.log('🔔 Calibration state changed:', state);
           this.emit('calibrationStateChanged', { state });
         }
       );
       this.subscriptionIds.push(calSubId);
 
-      // Start calibration
+      // Write 1 to 0xDD01 to enter calibration mode (this kicks off the process)
+      console.log('✍️ Writing 1 to 0xDD01 to enter calibration mode...');
       await writeCharacteristic(
         FULL_UUIDS.CALIBRATION_SERVICE,
         FULL_UUIDS.CALIBRATION_CONTROL,
-        new Uint8Array([CalibrationStep.START])
+        new Uint8Array([1]) // Enter Calibration = 1
       );
 
+      console.log('✅ Calibration mode entered, subscribed to state updates');
       return true;
     } catch (error) {
-      console.error('Calibration start failed:', error);
+      console.error('❌ Failed to enter calibration mode:', error);
       this.emit('error', { type: 'calibration', error });
       return false;
     }
   }
 
   /**
-   * Set lock mechanism calibration (closed position)
+   * Step 2: Calibrate lock mechanism positions
+   * Write to 0xDD02 (Locking Mechanism Calibration Sequence)
+   * Values: CLP = 2, CULP = 3, JLP = 4, JULP = 5
    */
-  public async calibrateLockMechanism(): Promise<boolean> {
+  public async calibrateLockPosition(position: 2 | 3 | 4 | 5): Promise<boolean> {
     try {
+      const positionNames = { 2: 'CLP (Locked)', 3: 'CULP (Unlocked)', 4: 'JLP (Jammed Locked)', 5: 'JULP (Jammed Unlocked)' };
+      console.log(`📝 Calibrating lock position: ${positionNames[position]}`);
+      
       await writeCharacteristic(
         FULL_UUIDS.CALIBRATION_SERVICE,
-        FULL_UUIDS.LOCK_MECHANISM_CALIBRATION,
-        new Uint8Array([CalibrationStep.SET_CLOSED_POSITION])
+        FULL_UUIDS.LOCKING_MECHANISM_CALIBRATION,
+        new Uint8Array([position])
       );
+      
+      console.log(`✅ Lock position ${positionNames[position]} calibrated`);
       return true;
     } catch (error) {
-      console.error('Lock mechanism calibration failed:', error);
+      console.error('❌ Lock position calibration failed:', error);
+      this.emit('error', { type: 'calibration', error });
       return false;
     }
   }
 
   /**
-   * Set door sensor calibration
+   * Step 3: Calibrate door sensor positions
+   * Write to 0xDD03 (Door Sensor Calibration Sequence)
+   * Values: widely open = 2, ajar = 3, closed = 4
    */
-  public async calibrateDoorSensor(): Promise<boolean> {
+  public async calibrateDoorPosition(position: 2 | 3 | 4): Promise<boolean> {
     try {
+      const positionNames = { 2: 'Widely Open', 3: 'Ajar', 4: 'Closed' };
+      console.log(`📝 Calibrating door position: ${positionNames[position]}`);
+      
       await writeCharacteristic(
         FULL_UUIDS.CALIBRATION_SERVICE,
         FULL_UUIDS.DOOR_SENSOR_CALIBRATION,
-        new Uint8Array([CalibrationStep.SET_DOOR_SENSOR])
+        new Uint8Array([position])
       );
+      
+      console.log(`✅ Door position ${positionNames[position]} calibrated`);
       return true;
     } catch (error) {
-      console.error('Door sensor calibration failed:', error);
+      console.error('❌ Door position calibration failed:', error);
+      this.emit('error', { type: 'calibration', error });
       return false;
     }
   }
 
   /**
-   * Complete calibration
+   * Step 4: Wait for calibration process state
+   * Subscribe to 0xDD04 (Calibration Process State) and wait for result
+   * Success = 2, Failed states = 3-6, In Progress = 7
+   * 
+   * Returns a promise that resolves when calibration completes or fails
    */
-  public async completeCalibration(): Promise<CalibrationProcessState> {
+  public async readCalibrationState(): Promise<CalibrationProcessState> {
     try {
-      const response = await writeAndWaitForStateUpdate(
+      console.log('📖 Reading calibration state from 0xDD04...');
+      const stateData = await readCharacteristic(
         FULL_UUIDS.CALIBRATION_SERVICE,
-        FULL_UUIDS.CALIBRATION_CONTROL,
-        FULL_UUIDS.CALIBRATION_SERVICE,
-        FULL_UUIDS.CALIBRATION_PROCESS_STATE,
-        new Uint8Array([CalibrationStep.COMPLETE]),
-        CalibrationProcessState.SUCCESS,
-        10000
+        FULL_UUIDS.CALIBRATION_PROCESS_STATE
       );
-
-      return response.length > 0 ? response[0] as CalibrationProcessState : CalibrationProcessState.UNKNOWN;
+      const state = stateData.length > 0 ? stateData[0] as CalibrationProcessState : CalibrationProcessState.UNKNOWN;
+      console.log('📊 Current calibration state:', state);
+      return state;
     } catch (error) {
-      console.error('Calibration complete failed:', error);
-      return CalibrationProcessState.FAILED;
+      console.error('❌ Failed to read calibration state:', error);
+      return CalibrationProcessState.UNKNOWN;
     }
   }
 
   /**
-   * Cancel calibration
+   * Step 5: Wait for calibration process state via notifications
+   * Subscribe to 0xDD04 (Calibration Process State) and wait for result
+   * Success = 2, Failed states = 3-6, In Progress = 7
+   * 
+   * Returns a promise that resolves when calibration completes or fails
    */
-  public async cancelCalibration(): Promise<void> {
-    await writeCharacteristic(
-      FULL_UUIDS.CALIBRATION_SERVICE,
-      FULL_UUIDS.CALIBRATION_CONTROL,
-      new Uint8Array([CalibrationStep.CANCEL])
-    );
+  public async waitForCalibrationResult(timeoutMs: number = 60000): Promise<CalibrationProcessState> {
+    return new Promise(async (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Calibration timeout'));
+      }, timeoutMs);
+
+      const stateListener = async (data: { state: CalibrationProcessState }) => {
+        console.log('🔔 Calibration state update:', data.state);
+        
+        // Check if calibration completed (success or any failure)
+        if (data.state === CalibrationProcessState.SUCCESS) {
+          console.log('✅ Calibration completed successfully!');
+          cleanup();
+          // Trust the notification value - don't read again as state can change quickly
+          resolve(CalibrationProcessState.SUCCESS);
+        } else if (
+          data.state === CalibrationProcessState.FAILED_ENCODER ||
+          data.state === CalibrationProcessState.FAILED_DOOR_SENSOR ||
+          data.state === CalibrationProcessState.FAILED_TRAIL ||
+          data.state === CalibrationProcessState.FAILED_MEMORY
+        ) {
+          console.log('❌ Calibration failed with state:', data.state);
+          cleanup();
+          // Trust the notification value for failure as well
+          resolve(data.state);
+        }
+        // If IN_PROGRESS (7), continue waiting
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.off('calibrationStateChanged', stateListener);
+      };
+
+      this.on('calibrationStateChanged', stateListener);
+    });
+  }
+
+  /**
+   * Complete full calibration flow
+   * Convenience method that performs all steps
+   */
+  public async performFullCalibration(
+    lockPositions: (2 | 3 | 4 | 5)[],
+    doorPositions: (2 | 3 | 4)[]
+  ): Promise<CalibrationProcessState> {
+    try {
+      // Step 1: Enter calibration mode
+      const entered = await this.enterCalibrationMode();
+      if (!entered) {
+        throw new Error('Failed to enter calibration mode');
+      }
+
+      // Step 2: Calibrate lock positions
+      for (const position of lockPositions) {
+        const success = await this.calibrateLockPosition(position);
+        if (!success) {
+          throw new Error(`Failed to calibrate lock position ${position}`);
+        }
+        // Small delay between commands
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Step 3: Calibrate door positions
+      for (const position of doorPositions) {
+        const success = await this.calibrateDoorPosition(position);
+        if (!success) {
+          throw new Error(`Failed to calibrate door position ${position}`);
+        }
+        // Small delay between commands
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Step 4: Wait for result
+      console.log('⏳ Waiting for calibration to complete...');
+      const result = await this.waitForCalibrationResult(60000);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Calibration flow failed:', error);
+      this.emit('error', { type: 'calibration', error });
+      return CalibrationProcessState.FAILED;
+    }
   }
 
   // ============================================================================

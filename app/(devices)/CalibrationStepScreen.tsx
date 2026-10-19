@@ -1,6 +1,6 @@
-import { ResizeMode, Video } from 'expo-av';
-import { router } from 'expo-router';
-import React from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import React, { useCallback } from 'react';
 import { TouchableOpacity, View } from 'react-native';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
@@ -30,6 +30,31 @@ const CalibrationStepScreen: React.FC<CalibrationStepScreenProps> = ({
   onNext,
   showBackButton = true,
 }) => {
+  // Create video player with loop enabled
+  const player = useVideoPlayer(calibrationVideo, (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+
+  // Restart video when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      // Play video when screen is focused
+      if (player) {
+        player.currentTime = 0;
+        player.play();
+      }
+      
+      return () => {
+        // Pause video when screen loses focus
+        if (player) {
+          player.pause();
+        }
+      };
+    }, [player])
+  );
+
   const handleBack = () => {
     router.back();
   };
@@ -68,13 +93,11 @@ const CalibrationStepScreen: React.FC<CalibrationStepScreenProps> = ({
 
         {/* Video Animation */}
         <View style={styles.gifContainer}>
-          <Video
-            source={calibrationVideo}
+          <VideoView
+            player={player}
             style={styles.gif}
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay
-            isLooping
-            isMuted
+            contentFit="contain"
+            nativeControls={false}
           />
         </View>
 

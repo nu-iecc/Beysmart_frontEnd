@@ -57,6 +57,8 @@
     <string>Allow BLE DEMO APP to connect to bluetooth devices</string>
     <key>NSCameraUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your camera</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>BeySmart uses biometric authentication to securely log you in without needing to enter your password.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your microphone</string>
     <key>NSPhotoLibraryUsageDescription</key>

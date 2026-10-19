@@ -7,7 +7,7 @@ export const buttonStyles = {
       backgroundColor: colors.primary.base,
       textColor: colors.text,
       borderRadius: 12,
-      paddingVertical: Spacing.sm,
+      paddingVertical: Spacing.md,
       paddingHorizontal: Spacing.xl,
       fontSize: fonts.size.body,
       disabledBackgroundColor: colors.primary.lightest,
@@ -24,10 +24,10 @@ export const buttonStyles = {
       primarySmall: {
         backgroundColor: colors.primary.base,
         textColor: colors.text,
-        paddingVertical: 12,
+        paddingVertical: Spacing.xs,
         paddingHorizontal: Spacing.md,
         borderRadius: 12,
-        fontSize: fonts.size.body,
+        fontSize: fonts.size.caption,
         disabledBackgroundColor: colors.primary.lightest,
       },
       primaryPressed: {
@@ -200,3 +200,4 @@ export const buttonStyles = {
       
     
   };
+  

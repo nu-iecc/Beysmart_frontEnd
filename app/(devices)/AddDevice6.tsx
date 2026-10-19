@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, TouchableOpacity, View } from 'react-native';
-import { BASE_URL } from '../../constants/api';
+import ProfilePage from '../(profile actions)/Profile';
+import { getMediaUrl } from '../../constants/api';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
 import { WIFI_DETAILS } from '../../design-system/home/Constants';
@@ -15,7 +16,9 @@ import { Typography } from '../../design-system/typography/typography';
 import { smartLockService, WifiConnectionState } from '../../src/ble';
 
 const AddDevice6 = () => {
+  const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const [wifiName, setWifiName] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
   const [errors, setErrors] = useState<{ wifiName?: string; wifiPassword?: string }>({});
@@ -30,8 +33,9 @@ const AddDevice6 = () => {
           const userData = JSON.parse(userDataString);
           setUser({
             first_name: userData.first_name || undefined,
-            profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+            profile_picture: getMediaUrl(userData.profile_picture)
           });
+          setUserEmail(userData.email || '');
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -152,13 +156,13 @@ const AddDevice6 = () => {
         router.push('/(app)/home');
         break;
       case 'devices':
-        router.push('/(tabs)/explore');
+        router.push('/(HomePage_actions)/MyDevices' as any);
         break;
       case 'energy':
-        router.push('/(tabs)/explore');
+        router.push('/(app)/home');
         break;
       case 'profile':
-        router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
+        setShowProfile(true);
         break;
     }
   };
@@ -237,6 +241,37 @@ const AddDevice6 = () => {
         onTabPress={handleTabPress}
       />
 
+      {/* Profile Modal */}
+      <ProfilePage
+        visible={showProfile}
+        userData={user ? {
+          name: user.first_name || null,
+          email: userEmail,
+          profilePicture: user.profile_picture || null,
+          homesCount: 0 // We don't have homes data in this context
+        } : undefined}
+        onClose={() => setShowProfile(false)}
+        onAddDevice={() => {
+          setShowProfile(false);
+          router.push('/(devices)/AddDevice2');
+        }}
+        onMyHomes={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/myHomes');
+        }}
+        onInviteFamily={() => {
+          setShowProfile(false);
+          // Handle invite family
+        }}
+        onAccountSettings={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/AccountSettings');
+        }}
+        onHelpSupport={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/Help&support');
+        }}
+      />
     </View>
   );
 };

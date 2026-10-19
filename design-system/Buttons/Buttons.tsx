@@ -98,7 +98,7 @@ export const AppButton: React.FC<ButtonProps> = ({
         <Typography
           variant="accent"
           color={variantStyle.textColor}
-          style={{ fontWeight: 'bold', fontSize: variantStyle.fontSize, lineHeight: 22, textAlign: 'center', flexShrink: 1 }}
+          style={{ fontWeight: 'bold' }}
         >
           {title}
         </Typography>

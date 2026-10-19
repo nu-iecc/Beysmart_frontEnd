@@ -4,7 +4,6 @@ import { TextInput, TouchableOpacity, View } from 'react-native';
 import { colors } from '../colors/colors';
 import { Spacing } from '../Layout/spacing';
 import { Typography } from '../typography/typography';
-import { fonts } from '../typography/fonts';
 
 interface TextFieldProps {
   label?: string;
@@ -42,12 +41,11 @@ const TextField: React.FC<TextFieldProps> = ({
   accessibilityHint,
 }) => {
   const [isSecure, setIsSecure] = useState(secureTextEntry);
-  const [isFocused, setIsFocused] = useState(false);
 
   const toggleSecureEntry = () => setIsSecure((prev) => !prev);
 
   // Determine border and text color based on state
-  let borderColor = isFocused ? colors.secondary.base : colors.border;
+  let borderColor = colors.border;
   let messageColor = colors.secondaryText;
   if (disabled) {
     borderColor = colors.background;
@@ -62,7 +60,7 @@ const TextField: React.FC<TextFieldProps> = ({
   return (
     <View style={{ marginBottom: Spacing.sm }}>
       {label && (
-        <Typography variant="body" style={{ marginBottom: Spacing.xs, fontSize: 14, fontFamily: fonts.family.medium }}>
+        <Typography variant="body" style={{ marginBottom: Spacing.xs }}>
           {label}
         </Typography>
       )}
@@ -70,8 +68,7 @@ const TextField: React.FC<TextFieldProps> = ({
         style={{
           borderWidth: 1,
           borderColor,
-          borderRadius: 12,
-          minHeight: 52,
+          borderRadius: 8,
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: Spacing.sm,
@@ -85,8 +82,6 @@ const TextField: React.FC<TextFieldProps> = ({
         <TextInput
           value={value}
           onChangeText={onChangeText}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
           placeholder={placeholder}
           placeholderTextColor={colors.disabled}
           secureTextEntry={isSecure}
@@ -97,9 +92,6 @@ const TextField: React.FC<TextFieldProps> = ({
           style={{
             flex: 1,
             paddingVertical: 12,
-            fontSize: 16,
-            fontFamily: fonts.family.base,
-            minWidth: 0,
             color: disabled ? colors.disabled : colors.text,
           }}
         />
@@ -107,7 +99,7 @@ const TextField: React.FC<TextFieldProps> = ({
           <View style={{ marginLeft: 8 }}>{rightIcon}</View>
         )}
         {showEyeIcon && !disabled && (
-          <TouchableOpacity onPress={toggleSecureEntry} accessibilityRole="button" accessibilityLabel={isSecure ? 'Show password' : 'Hide password'} style={{ padding: 8 }}>
+          <TouchableOpacity onPress={toggleSecureEntry}>
             <Ionicons
               name={isSecure ? 'eye-off-outline' : 'eye-outline'}
               size={20}

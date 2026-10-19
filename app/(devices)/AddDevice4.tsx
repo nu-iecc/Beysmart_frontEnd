@@ -3,7 +3,8 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView, PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
-import { BASE_URL } from '../../constants/api';
+import ProfilePage from '../(profile actions)/Profile';
+import { getMediaUrl } from '../../constants/api';
 import { colors } from '../../design-system/colors/colors';
 import { BackArrow } from '../../design-system/icons';
 import { Beylock, Beyplug, Beysense, Beyswitch, BluetoothIcon } from '../../design-system/icons/filled/';
@@ -12,8 +13,14 @@ import { BottomNavigation } from '../../design-system/Navigation/BottomNavigatio
 import { Typography } from '../../design-system/typography/typography';
 // Metro config handles BLE mocking when DISABLE_BLE=true
 import bluetoothManager from '../../src/ble';
-import type { BleDevice } from '../../src/ble/types';
 
+// BLE Device interface - matches the interface from bluetoothManager
+interface BleDevice {
+  id: string;
+  name: string;
+  rssi: number;
+  advertising: any;
+}
 interface ScannedDevice {
   id: string;
   name: string;
@@ -24,7 +31,9 @@ interface ScannedDevice {
 
 const AddDevice4 = () => {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const [showBluetoothModal, setShowBluetoothModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [showDeviceList, setShowDeviceList] = useState(false);
@@ -51,8 +60,9 @@ const AddDevice4 = () => {
           const userData = JSON.parse(userDataString);
           setUser({
             first_name: userData.first_name || undefined,
-            profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+            profile_picture: getMediaUrl(userData.profile_picture)
           });
+          setUserEmail(userData.email || '');
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -66,7 +76,10 @@ const AddDevice4 = () => {
     startBluetoothScanning();
     return () => {
       // Cleanup: stop scanning when component unmounts
-      bluetoothManager.destroyBleManager();
+      // NOTE: Do NOT call destroyBleManager() here! It causes crashes during navigation
+      // when the device is still connected. The device should stay connected through
+      // the entire calibration flow.
+      console.log('🔕 AddDevice4 unmounting - NOT destroying BLE manager');
     };
   }, []);
 
@@ -76,7 +89,10 @@ const AddDevice4 = () => {
       setScannedDevices([]);
       setShowDeviceList(false);
 
-      await bluetoothManager.scanForDevices((device: BleDevice) => {
+      let scanTimeout: ReturnType<typeof setTimeout> | null = null;
+      let foundSmartDevice = false;
+
+      await bluetoothManager.scanForDevices((device: import("../../src/ble/types").BleDevice) => {
         console.log('Found device:', device.name, device.id);
         
         // Only add devices that have names (the bluetooth manager already filters for named devices)
@@ -97,14 +113,28 @@ const AddDevice4 = () => {
             }
             return prevDevices;
           });
+
+          // Stop scanning immediately if device name contains "Smart"
+          if (device.name.toLowerCase().includes('smart') && !foundSmartDevice) {
+            foundSmartDevice = true;
+            console.log('Found Smart device, stopping scan...');
+            if (scanTimeout) clearTimeout(scanTimeout);
+            bluetoothManager.stopScan();
+            setIsScanning(false);
+            setShowDeviceList(true);
+          }
         }
       });
 
-      // Stop scanning after 10 seconds
-      setTimeout(() => {
-        setIsScanning(false);
-        setShowDeviceList(true);
-      }, 10000);
+      // Stop scanning after 2 seconds if no Smart device found
+      scanTimeout = setTimeout(() => {
+        if (!foundSmartDevice) {
+          console.log('Scan timeout (2s), stopping...');
+          bluetoothManager.stopScan();
+          setIsScanning(false);
+          setShowDeviceList(true);
+        }
+      }, 2000);
 
     } catch (error) {
       console.error('Bluetooth scanning error:', error);
@@ -120,19 +150,26 @@ const AddDevice4 = () => {
     setSelectedDevice(deviceType);
   };
 
-  const handleConnect = async (deviceId: string) => {
+  const handleConnect = async (deviceId: string, deviceName: string) => {
     try {
       setIsConnecting(true);
       const device = await bluetoothManager.connectToDevice(deviceId);
       
       if (device) {
+        // Store the BLE device ID for later use when creating device in backend
+        await AsyncStorage.setItem('bleDeviceId', deviceId);
+        await AsyncStorage.setItem('bleDeviceName', deviceName);
+        console.log('Stored BLE Device ID:', deviceId);
+        console.log('Stored BLE Device Name:', deviceName);
+        
         Alert.alert(
           'Success!', 
           `Connected to ${device.name}`,
           [
             {
               text: 'Continue',
-              onPress: () => router.push('/(devices)/AddDevice6')
+              // Skip WiFi credentials screen, go directly to device pairing success
+              onPress: () => router.push('/(devices)/AddDevice7')
             }
           ]
         );
@@ -180,13 +217,13 @@ const AddDevice4 = () => {
         router.push('/(app)/home');
         break;
       case 'devices':
-        router.push('/(tabs)/explore');
+        router.push('/(HomePage_actions)/MyDevices' as any);
         break;
       case 'energy':
-        router.push('/(tabs)/explore');
+        router.push('/(app)/home');
         break;
       case 'profile':
-        router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
+        setShowProfile(true);
         break;
     }
   };
@@ -279,7 +316,7 @@ const AddDevice4 = () => {
                             backgroundColor: isDisabled ? colors.border : colors.primary.base,
                           }
                         ]}
-                        onPress={() => handleConnect(device.id)}
+                        onPress={() => handleConnect(device.id, device.name)}
                         disabled={isDisabled}
                       >
                         <Typography 
@@ -326,6 +363,37 @@ const AddDevice4 = () => {
         onTabPress={handleTabPress}
       />
 
+      {/* Profile Modal */}
+      <ProfilePage
+        visible={showProfile}
+        userData={user ? {
+          name: user.first_name || null,
+          email: userEmail,
+          profilePicture: user.profile_picture || null,
+          homesCount: 0 // We don't have homes data in this context
+        } : undefined}
+        onClose={() => setShowProfile(false)}
+        onAddDevice={() => {
+          setShowProfile(false);
+          router.push('/(devices)/AddDevice2');
+        }}
+        onMyHomes={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/myHomes');
+        }}
+        onInviteFamily={() => {
+          setShowProfile(false);
+          // Handle invite family
+        }}
+        onAccountSettings={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/AccountSettings');
+        }}
+        onHelpSupport={() => {
+          setShowProfile(false);
+          router.push('/(profile actions)/Help&support');
+        }}
+      />
 
       {/* Bluetooth Permission Modal */}
       <Modal

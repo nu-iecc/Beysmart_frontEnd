@@ -30,6 +30,9 @@ const activeSubscriptions: Map<string, Subscription> = new Map();
 // Connected device reference
 let connectedDevice: Device | null = null;
 
+// Disconnection callback
+let onDisconnectionCallback: (() => void) | null = null;
+
 // Scan subscription reference
 let scanSubscription: Subscription | null = null;
 
@@ -102,28 +105,42 @@ export const isBluetoothEnabled = async (): Promise<boolean> => {
 };
 
 /**
- * Enable Bluetooth (Android only)
+ * Enable Bluetooth (triggers system prompt on Android, returns state on iOS)
  */
 export const enableBluetooth = async (): Promise<boolean> => {
   try {
     const manager = getBleManager();
     
-    // Wait for state to be ready
-    return new Promise((resolve) => {
-      const subscription = manager.onStateChange((state) => {
-        console.log(`🔵 Bluetooth state changed: ${state}`);
-        if (state === 'PoweredOn') {
-          subscription.remove();
-          resolve(true);
-        }
-      }, true);
+    if (Platform.OS === 'android') {
+      // On Android, we can trigger the system Bluetooth enable prompt
+      console.log('🔵 Requesting Bluetooth enable on Android...');
+      
+      return new Promise((resolve) => {
+        const subscription = manager.onStateChange((state) => {
+          console.log(`🔵 Bluetooth state changed: ${state}`);
+          if (state === 'PoweredOn') {
+            subscription.remove();
+            resolve(true);
+          }
+        }, true); // true = emit current state immediately
 
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        subscription.remove();
-        resolve(false);
-      }, 10000);
-    });
+        // If already powered on, we're done
+        // Otherwise the state change listener will catch it when user enables it
+        
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          subscription.remove();
+          console.log('⏱️ Bluetooth enable timeout');
+          resolve(false);
+        }, 10000);
+      });
+    } else {
+      // iOS doesn't allow programmatic Bluetooth enabling
+      // Just check current state
+      console.log('📱 iOS: Cannot enable Bluetooth programmatically');
+      const state = await manager.state();
+      return state === 'PoweredOn';
+    }
   } catch (error) {
     console.error('❌ Error enabling Bluetooth:', error);
     return false;
@@ -139,7 +156,7 @@ export const enableBluetooth = async (): Promise<boolean> => {
 export const scanForDevices = async (
   onDeviceFound: (device: BleDevice) => void,
   timeout: number = 30000,
-  nameFilter: string = 'Smart'
+  nameFilter: string = 'Smart Lock'
 ): Promise<void> => {
   const manager = getBleManager();
   
@@ -281,6 +298,12 @@ export const connectToDevice = async (deviceId: string): Promise<Device> => {
       connectedDevice = null;
       // Clean up all subscriptions
       cleanupAllSubscriptions();
+      
+      // Notify SmartLockService about disconnection
+      if (onDisconnectionCallback) {
+        console.log('📢 Calling disconnection callback to notify SmartLockService');
+        onDisconnectionCallback();
+      }
     });
 
     return device;
@@ -296,6 +319,9 @@ export const connectToDevice = async (deviceId: string): Promise<Device> => {
 export const disconnectFromDevice = async (): Promise<void> => {
   if (connectedDevice) {
     try {
+      // Cancel all subscriptions BEFORE disconnecting to prevent duplicates on reconnect
+      await cleanupAllSubscriptionsBeforeDisconnect();
+      
       await connectedDevice.cancelConnection();
       console.log('✅ Disconnected successfully');
     } catch (error) {
@@ -425,8 +451,13 @@ export const subscribeToNotifications = async (
 
   const subscriptionId = `${fullServiceUUID}:${fullCharUUID}`;
 
-  // Unsubscribe if already subscribed
-  await unsubscribeFromNotifications(subscriptionId);
+  // If already subscribed, just return the existing subscription ID instead of canceling
+  // DO NOT call .remove() as it causes native crashes with null pointer exceptions
+  const existingSubscription = activeSubscriptions.get(subscriptionId);
+  if (existingSubscription) {
+    console.log(`✅ Already subscribed to: ${subscriptionId}, reusing existing subscription`);
+    return subscriptionId;
+  }
 
   console.log(`🔔 Subscribing to notifications: ${fullCharUUID}`);
 
@@ -436,7 +467,10 @@ export const subscribeToNotifications = async (
       fullCharUUID,
       (error, characteristic) => {
         if (error) {
-          console.error(`❌ Notification error:`, error);
+          // Safely log errors without crashing - device may have disconnected
+          console.log(`🔕 Notification subscription ended: ${error.message || 'Device disconnected'}`);
+          // Remove from active subscriptions when error occurs (device disconnected)
+          activeSubscriptions.delete(subscriptionId);
           return;
         }
 
@@ -465,20 +499,41 @@ export const subscribeToNotifications = async (
 export const unsubscribeFromNotifications = async (subscriptionId: string): Promise<void> => {
   const subscription = activeSubscriptions.get(subscriptionId);
   if (subscription) {
-    subscription.remove();
-    activeSubscriptions.delete(subscriptionId);
-    console.log(`🔕 Unsubscribed from: ${subscriptionId}`);
+    try {
+      subscription.remove();
+      console.log(`🔕 Unsubscribed from: ${subscriptionId}`);
+    } catch (error) {
+      // Ignore errors during unsubscribe - the subscription may already be gone
+      console.log(`🔕 Unsubscribe cleanup for: ${subscriptionId} (may have already been removed)`);
+    } finally {
+      activeSubscriptions.delete(subscriptionId);
+    }
   }
 };
 
 /**
- * Cleanup all active subscriptions
+ * Cleanup all active subscriptions BEFORE disconnect
+ * This properly cancels subscriptions while device is still connected
+ */
+const cleanupAllSubscriptionsBeforeDisconnect = async (): Promise<void> => {
+  console.log(`🔕 Canceling ${activeSubscriptions.size} active subscription(s) before disconnect`);
+  
+  // WORKAROUND: Do NOT call subscription.remove() as it causes native crashes
+  // with null pointer exceptions in react-native-ble-plx
+  // The subscriptions will be automatically cleaned up when the device disconnects
+  
+  // Just clear our tracking map without calling native .remove()
+  activeSubscriptions.clear();
+  console.log('✅ All subscriptions cleared (skipped native .remove() to avoid crash)');
+};
+
+/**
+ * Cleanup all active subscriptions (used when device already disconnected)
  */
 const cleanupAllSubscriptions = (): void => {
-  activeSubscriptions.forEach((subscription, id) => {
-    subscription.remove();
-    console.log(`🔕 Cleaned up subscription: ${id}`);
-  });
+  // When device disconnects, subscriptions are already dead - just clear the map
+  // Calling .remove() on dead subscriptions can cause native crashes
+  console.log(`🔕 Cleaning up ${activeSubscriptions.size} subscription(s)`);
   activeSubscriptions.clear();
 };
 
@@ -825,6 +880,13 @@ export const destroyBleManager = (): void => {
 };
 
 // Export default object for convenience
+/**
+ * Set callback to be called when device disconnects unexpectedly
+ */
+export const setDisconnectionCallback = (callback: (() => void) | null): void => {
+  onDisconnectionCallback = callback;
+};
+
 export default {
   requestBluetoothPermissions,
   isBluetoothEnabled,

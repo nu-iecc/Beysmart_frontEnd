@@ -1,5 +1,6 @@
-import { router } from 'expo-router';
-import React from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { CALIBRATION_SUCCESS } from '../../design-system/home/Constants';
@@ -8,10 +9,45 @@ import { Spacing } from '../../design-system/Layout/spacing';
 import { Typography } from '../../design-system/typography/typography';
 
 const AddDevice16 = () => {
+  const params = useLocalSearchParams();
+  const [bleDeviceId, setBleDeviceId] = useState<string | null>(null);
+  
+  // Load BLE device ID from AsyncStorage when component mounts
+  useEffect(() => {
+    const loadBleDeviceId = async () => {
+      try {
+        const storedBleId = await AsyncStorage.getItem('bleDeviceId');
+        if (storedBleId) {
+          console.log('📡 Loaded BLE Device ID for lock screen:', storedBleId);
+          setBleDeviceId(storedBleId);
+        }
+      } catch (error) {
+        console.error('Failed to load BLE device ID:', error);
+      }
+    };
+    loadBleDeviceId();
+  }, []);
+  
   const handleGoToDevice = () => {
-    // TODO: Navigate to device details screen
+    // Navigate to lock control screen with device details including BLE device ID
+    // Use replace() to remove calibration success screen from stack
     console.log('Go to device details');
-    router.push('/(app)/home');
+    const navParams: any = {
+      deviceName: params.deviceName as string,
+      homeName: params.homeName as string || params.deviceLocation as string,
+      deviceId: params.deviceId as string,
+    };
+    
+    // Add BLE device ID if available
+    if (bleDeviceId) {
+      navParams.bleDeviceId = bleDeviceId;
+      console.log('📡 Passing BLE Device ID to lock screen:', bleDeviceId);
+    }
+    
+    router.replace({
+      pathname: '/(Lock/Unlock)/LockControlScreen' as any,
+      params: navParams
+    });
   };
 
   const handleGoToHomepage = () => {

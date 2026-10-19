@@ -1,14 +1,15 @@
 import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withTiming,
 } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ThemedText';
+import { scaleFont } from '@/utils/responsive';
 
 export function HelloWave() {
   const rotationAnimation = useSharedValue(0);
@@ -33,8 +34,8 @@ export function HelloWave() {
 
 const styles = StyleSheet.create({
   text: {
-    fontSize: 28,
-    lineHeight: 32,
-    marginTop: -6,
+    fontSize: scaleFont(28),
+    lineHeight: scaleFont(32),
+    marginTop: scaleFont(-6),
   },
 });

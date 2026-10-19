@@ -3,7 +3,6 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Modal, ScrollView, TouchableOpacity, View } from 'react-native';
 import { BASE_URL } from '../../constants/api';
-import { apiErrorMessage } from '@/utils/api';
 
 // Design System imports
 import { AUTH_COPY, AUTH_COUNTRIES, AUTH_TEXT, AUTH_THEME, AUTH_VISUALS, type AuthScreenCopy } from '../../design-system/auth/constants';
@@ -24,11 +23,10 @@ import { Typography } from '../../design-system/typography/typography';
   const [selectedCountry, setSelectedCountry] = useState(countries[0]);
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [registrationError, setRegistrationError] = useState('');
 
-  // Email validation function - requires .com domain
+  // Email validation function - accepts any valid TLD (.com, .net, .org, .io, etc.)
   const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.com$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
@@ -36,20 +34,22 @@ import { Typography } from '../../design-system/typography/typography';
   const handleEmailChange = (text: string) => {
     setEmail(text);
     if (text.length > 0 && !validateEmail(text)) {
-      setEmailError('Please enter a valid email address(e.g., user@example.com)');
+      setEmailError('Please enter a valid email address');
     } else {
       setEmailError('');
     }
   };
 
   const handleRegister = async () => {
-    setRegistrationError('');
     try {
+      // Combine country dial code with phone number for full international format
+      const fullPhoneNumber = selectedCountry.dial + phoneNumber;
+      
       const requestData = {
         first_name: firstName,
         last_name: lastName,
         email,
-        phone_number: phoneNumber,
+        phone_number: fullPhoneNumber,
         country: selectedCountry.name,
       };
       
@@ -64,7 +64,7 @@ import { Typography } from '../../design-system/typography/typography';
         pathname: '/(auth)/verify-otp', 
         params: {
           email: email, 
-          phone_number: phoneNumber, 
+          phone_number: fullPhoneNumber, 
           first_name: firstName,
           last_name: lastName,
           flow: 'register'
@@ -72,8 +72,7 @@ import { Typography } from '../../design-system/typography/typography';
       });
       
     }  catch (error: any) {
-      const errorMessage = apiErrorMessage(error, 'Registration failed. Please check your connection and try again.');
-      setRegistrationError(errorMessage);
+      const errorMessage = error.response?.data?.message || error.message || 'Registration failed. Please try again.';
       Alert.alert('Registration Failed', errorMessage);
     }
   }
@@ -84,16 +83,16 @@ import { Typography } from '../../design-system/typography/typography';
   const visuals = AUTH_VISUALS.register;
 
   return (
-    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
+    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
       {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 44,
-            height: 44,
+            width: 48, // icon container 48px (6x base unit)
+            height: 48,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 14,
+            borderRadius: 12,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -104,13 +103,13 @@ import { Typography } from '../../design-system/typography/typography';
         </TouchableOpacity>
 
         {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
           <View
             style={{
-              width: 72, // 12x base unit
-              height: 72,
+              width: 96, // 12x base unit
+              height: 96,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 36,
+              borderRadius: 48,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -119,7 +118,7 @@ import { Typography } from '../../design-system/typography/typography';
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
             {copy.title}
           </Typography>
           
@@ -208,6 +207,7 @@ import { Typography } from '../../design-system/typography/typography';
             value={phoneNumber}
             onChangeText={setPhoneNumber}
             placeholder={copy.fields?.phonePlaceholder || '(123) 456-7890'}
+            keyboardType="phone-pad"
             leftIcon={
               <View style={{ 
                 paddingRight: 8, 
@@ -238,7 +238,6 @@ import { Typography } from '../../design-system/typography/typography';
             </Typography>
           </View>
         </View>
-        {!!registrationError && <Typography variant="body" color="#B42318" accessibilityRole="alert">{registrationError}</Typography>}
       </ScrollView>
 
       {/* Country Picker Modal */}
@@ -302,6 +301,7 @@ import { Typography } from '../../design-system/typography/typography';
     </View>
   );
 };
+
 
 
 

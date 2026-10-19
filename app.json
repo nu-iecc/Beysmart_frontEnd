@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.Beysmart",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "BeySmart uses biometric authentication to securely log you in without needing to enter your password."
       }
     },
     "android": {
@@ -27,7 +28,9 @@
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ],
       "package": "com.anonymous.Beysmart"
     },
@@ -65,7 +68,14 @@
             "Bluetooth"
           ]
         }
-      ]
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "BeySmart uses biometric authentication to securely log you in without needing to enter your password."
+        }
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true
