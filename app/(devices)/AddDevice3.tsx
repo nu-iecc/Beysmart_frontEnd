@@ -1,3 +1,9 @@
+import SetupScreen from '@/components/SetupScreen';
+import { setupStyles } from '@/components/SetupScreen';
+import { Beylock } from '@/design-system/icons/filled';
+import { FixingIcon } from '@/design-system/icons/filled';
+import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet } from 'react-native';
 import { colors } from '@/design-system/colors/colors';
 import { BEY_LOCK_MODEL } from '@/design-system/home/Constants';
 import { BackArrow } from '@/design-system/icons';
@@ -10,7 +16,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, TouchableOpacity, View } from 'react-native';
 import ProfilePage from '../(profile actions)/Profile';
-import { BASE_URL } from '../../constants/api';
+import { getMediaUrl } from '../../constants/api';
 
 const AddDevice3: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -26,7 +32,7 @@ const AddDevice3: React.FC = () => {
           const userData = JSON.parse(userDataString);
           setUser({
             first_name: userData.first_name || undefined,
-            profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+            profile_picture: getMediaUrl(userData.profile_picture)
           });
           setUserEmail(userData.email || '');
         }
@@ -54,145 +60,53 @@ const AddDevice3: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack} accessibilityLabel="Go back" accessibilityHint="Return to previous screen">
-            <BackArrow width={24} height={24} color={colors.surface} />
-          </TouchableOpacity>
-          <Typography variant="h3" color={colors.surface} style={styles.headerTitle}>
-            {BEY_LOCK_MODEL.NAVIGATION.TITLE}
-          </Typography>
-        </View>
-        <Typography variant="caption" color={colors.surface} style={styles.stepIndicator}>
-          {BEY_LOCK_MODEL.NAVIGATION.STEP_INDICATOR}
-        </Typography>
-      </View>
+    <SetupScreen step={2} title="Which Bey-Lock?" subtitle="You'll find the model on the back of the lock.">
+      {BEY_LOCK_MODEL.MODELS.map((model) => (
+        <TouchableOpacity
+          key={model.id}
+          style={setupStyles.row}
+          activeOpacity={0.75}
+          onPress={() => handleModelSelect(model.id)}
+          accessibilityRole="button"
+          accessibilityLabel={`Select ${model.name}`}
+        >
+          <View style={[setupStyles.iconTile, styles.lockTile]}>
+            <Beylock width={24} height={24} color={colors.completedstep} />
+          </View>
+          <View style={styles.copy}>
+            <Typography variant="h3" color={colors.text}>{model.name}</Typography>
+            <Typography variant="caption" color={colors.disabled}>{model.model}</Typography>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.disabled} />
+        </TouchableOpacity>
+      ))}
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.formContainer}>
-          <Typography variant="h2" color={BEY_LOCK_MODEL.COLORS.SECTION_TITLE} style={styles.sectionTitle}>
-            {BEY_LOCK_MODEL.SECTIONS.SELECT_MODEL}
-          </Typography>
-
-          {BEY_LOCK_MODEL.MODELS.map((model) => (
-            <TouchableOpacity
-              key={model.id}
-              style={[
-                styles.modelCard,
-                selectedModel === model.id && styles.selectedModelCard
-              ]}
-              onPress={() => handleModelSelect(model.id)}
-              accessibilityLabel={`Select ${model.name}`}
-            >
-              <View style={[styles.modelIconContainer, { backgroundColor: BEY_LOCK_MODEL.COLORS.CARD_ICON_BACKGROUND }]}>
-                <Lock width={24} height={24} color={colors.text} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Typography variant="h3" color={colors.text} style={{ marginBottom: 2, fontSize: 16 }}>
-                  {model.name}
-                </Typography>
-                <Typography variant="caption" color={colors.secondaryText}>
-                  {model.model}
-                </Typography>
-              </View>
-              <View style={styles.chevronContainer}>
-                <BackArrow width={16} height={16} color={colors.text} style={{ transform: [{ rotate: '180deg' }] }} />
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          <View style={styles.installationSection}>
-            <View style={styles.installationHeader}>
-              <View style={styles.wrenchIconContainer}>
-                {React.createElement((require('@/design-system/icons/filled') as any).FixingIcon, {
-                  width: 20,
-                  height: 20,
-                  color: colors.completedstep,
-                })}
-              </View>
-              <Typography variant="h3" color={colors.text} style={{ fontSize: 16, marginLeft: 8 }}>
-                {BEY_LOCK_MODEL.SECTIONS.INSTALLATION_GUIDE}
-              </Typography>
-            </View>
-            <Typography variant="caption" color={colors.secondaryText} style={{ marginTop: 4, marginLeft: 28 }}>
-              {BEY_LOCK_MODEL.INSTALLATION.ESTIMATED_TIME}
-            </Typography>
-            <Typography variant="body" color={colors.secondaryText} style={{ marginTop: 8, marginLeft: 28, lineHeight: 20 }}>
-              {BEY_LOCK_MODEL.INSTALLATION.DESCRIPTION}
-            </Typography>
-            <TouchableOpacity style={styles.installationButton} onPress={handleInstallationGuide}>
-              <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>
-                {BEY_LOCK_MODEL.INSTALLATION.BUTTON_TEXT}
-              </Typography>
-            </TouchableOpacity>
+      <View style={[setupStyles.card, styles.guide]}>
+        <View style={styles.guideHeader}>
+          <View style={[setupStyles.iconTile, styles.guideTile]}>
+            <FixingIcon width={20} height={20} color={colors.navBarBackground} />
+          </View>
+          <View style={styles.copy}>
+            <Typography variant="h3" color={colors.text}>{BEY_LOCK_MODEL.SECTIONS.INSTALLATION_GUIDE}</Typography>
+            <Typography variant="caption" color={colors.disabled}>{BEY_LOCK_MODEL.INSTALLATION.ESTIMATED_TIME}</Typography>
           </View>
         </View>
-      </ScrollView>
-
-      <BottomNavigation
-        items={[
-          { key: 'home', label: 'Home', icon: null },
-          { key: 'devices', label: 'Devices', icon: null },
-          { key: 'energy', label: 'Energy', icon: null },
-          { key: 'profile', label: 'Profile', icon: null },
-        ]}
-        activeKey="devices"
-        profile_picture={user?.profile_picture}
-        onTabPress={(key) => {
-          if (key === 'home') {
-            router.push('/(app)/home');
-          } else if (key === 'devices') {
-            // stay
-          } else if (key === 'energy') {
-            router.push('/(app)/home');
-          } else if (key === 'profile') {
-            setShowProfile(true);
-          }
-        }}
-      />
-
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: 0 // We don't have homes data in this context
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
-    </View>
+        <Typography variant="caption" color={colors.secondaryText}>{BEY_LOCK_MODEL.INSTALLATION.DESCRIPTION}</Typography>
+        <TouchableOpacity style={styles.guideButton} activeOpacity={0.75} onPress={handleInstallationGuide} accessibilityRole="button">
+          <Typography variant="caption" color={colors.text} style={styles.guideButtonText}>{BEY_LOCK_MODEL.INSTALLATION.BUTTON_TEXT}</Typography>
+          <Ionicons name="arrow-forward" size={16} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+    </SetupScreen>
   );
 };
 
-const styles = {
-  container: {
+const styles = StyleSheet.create({
+container: {
     flex: 1,
     backgroundColor: BEY_LOCK_MODEL.COLORS.HEADER_BACKGROUND,
   },
-  header: {
+header: {
     backgroundColor: BEY_LOCK_MODEL.COLORS.HEADER_BACKGROUND,
     height: BEY_LOCK_MODEL.DIMENSIONS.HEADER_HEIGHT + 60,
     flexDirection: 'row' as const,
@@ -201,39 +115,39 @@ const styles = {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.xxl,
   },
-  headerLeft: {
+headerLeft: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
   },
-  backButton: {
+backButton: {
     padding: Spacing.xs,
   },
-  headerTitle: {
+headerTitle: {
     textAlign: 'left' as const,
     marginLeft: Spacing.xs,
     marginRight: Spacing.md,
     fontSize: 18,
     fontWeight: '600' as const,
   },
-  stepIndicator: {
+stepIndicator: {
     fontSize: 11,
     textAlign: 'right' as const,
   },
-  content: {
+content: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  formContainer: {
+formContainer: {
     padding: Spacing.lg,
     paddingBottom: Spacing.xxl,
   },
-  sectionTitle: {
+sectionTitle: {
     marginTop: Spacing.xs - 20,
     marginBottom: BEY_LOCK_MODEL.DIMENSIONS.SECTION_SPACING,
     fontSize: 18,
     fontWeight: '600' as const,
   },
-  modelCard: {
+modelCard: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     paddingVertical: 14,
@@ -247,11 +161,11 @@ const styles = {
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  selectedModelCard: {
+selectedModelCard: {
     borderWidth: 2,
     borderColor: colors.primary.base,
   },
-  modelIconContainer: {
+modelIconContainer: {
     width: BEY_LOCK_MODEL.DIMENSIONS.ICON_SIZE,
     height: BEY_LOCK_MODEL.DIMENSIONS.ICON_SIZE,
     borderRadius: 12,
@@ -259,26 +173,26 @@ const styles = {
     justifyContent: 'center' as const,
     marginRight: 16,
   },
-  chevronContainer: {
+chevronContainer: {
     padding: 4,
   },
-  installationSection: {
+installationSection: {
     marginTop: Spacing.xl,
     padding: 16,
     backgroundColor: colors.surface,
     borderRadius: 12,
   },
-  installationHeader: {
+installationHeader: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
   },
-  wrenchIconContainer: {
+wrenchIconContainer: {
     width: 20,
     height: 20,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  installationButton: {
+installationButton: {
     marginTop: 16,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -286,6 +200,16 @@ const styles = {
     borderRadius: 8,
     alignItems: 'center' as const,
   },
-};
+copy: { flex: 1, gap: 2 },
+lockTile: { backgroundColor: '#DCEBFF' },
+guide: { marginTop: 12 },
+guideHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+guideTile: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.primary.base },
+guideButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 12, borderRadius: 14, backgroundColor: colors.iconBackground,
+  },
+guideButtonText: { fontFamily: 'InterMedium' }
+});
 
 export default AddDevice3;

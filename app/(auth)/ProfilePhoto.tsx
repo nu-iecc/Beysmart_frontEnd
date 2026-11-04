@@ -38,13 +38,13 @@ const ProfilePhoto = () => {
 
       if (!result.canceled && result.assets[0]) {
         const selectedAsset = result.assets[0];
-        
+
         // Validate file size (max 5MB)
         if (selectedAsset.fileSize && selectedAsset.fileSize > 5 * 1024 * 1024) {
           Alert.alert('File Too Large', 'Please select an image smaller than 5MB.');
           return;
         }
-        
+
         setSelectedImage(selectedAsset.uri);
       }
     } catch (error) {
@@ -63,11 +63,11 @@ const ProfilePhoto = () => {
     try {
       // Create FormData for the image upload
       const formData = new FormData();
-      
+
       // Get the file extension and determine MIME type
       const uriParts = selectedImage.split('.');
       const fileExtension = uriParts[uriParts.length - 1].toLowerCase();
-      
+
       // Map common extensions to MIME types
       const mimeTypeMap: { [key: string]: string } = {
         'jpg': 'image/jpeg',
@@ -76,16 +76,16 @@ const ProfilePhoto = () => {
         'gif': 'image/gif',
         'webp': 'image/webp',
       };
-      
+
       const mimeType = mimeTypeMap[fileExtension] || 'image/jpeg';
-      
+
       // Append the image file
       formData.append('profile_picture', {
         uri: selectedImage,
         type: mimeType,
         name: `profile_picture.${fileExtension}`,
       } as any);
-      
+
       // Append other user data if available (for registration flow)
       if (email) formData.append('email', email as string);
       if (phone_number) formData.append('phone_number', phone_number as string);
@@ -108,7 +108,7 @@ const ProfilePhoto = () => {
         });
       }
 
-      
+
       // Navigate based on the flow
       Alert.alert('Success', 'Profile photo uploaded successfully!', [
         {
@@ -124,7 +124,7 @@ const ProfilePhoto = () => {
           }
         }
       ]);
-      
+
     } catch (error: any) {
       console.error('Profile photo upload failed:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to upload profile photo. Please try again.';
@@ -159,17 +159,17 @@ const ProfilePhoto = () => {
   const copy = AUTH_COPY.profilePhoto as AuthScreenCopy;
   const visuals = AUTH_VISUALS.profilePhoto;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+  return ((
+    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
       {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: colors.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -186,13 +186,13 @@ const ProfilePhoto = () => {
         </TouchableOpacity>
 
         {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
-              width: 96,
-              height: 96,
+              width: 72,
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -200,11 +200,11 @@ const ProfilePhoto = () => {
           >
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
-          
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {copy.title}
           </Typography>
-          
+
           <Typography variant="body" color={AUTH_THEME.secondaryText} style={{ textAlign: 'center' }}>
             {copy.subtitle}
           </Typography>
@@ -276,17 +276,17 @@ const ProfilePhoto = () => {
         </TouchableOpacity>
 
         {/* Security Indicator */}
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           justifyContent: 'center',
-          marginTop: Spacing.xl 
+          marginTop: Spacing.xl
         }}>
           {visuals.securityIcon ? (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           ) : null}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -295,7 +295,7 @@ const ProfilePhoto = () => {
         </View>
       </View>
     </View>
-  );
+  ));
 };
 
 export default ProfilePhoto;

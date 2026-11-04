@@ -27,8 +27,8 @@ export interface IconProps {
 }
 
 export const renderIcon = (props: IconProps): React.ReactNode => {
-  const { key, size = 'medium', color, isActive } = props;
-  
+  const { key, size = 'medium', color } = props;
+
   if (!isValidIconKey(key)) {
     console.warn(`Invalid icon key: ${key}`);
     return null;
@@ -41,28 +41,27 @@ export const renderIcon = (props: IconProps): React.ReactNode => {
   }
 
   const iconSize = typeof size === 'string' ? getIconSize('navigation', size) : size;
-  
+
   return (
-    <IconComponent 
-      width={iconSize.width} 
-      height={iconSize.height} 
+    <IconComponent
+      width={iconSize.width}
+      height={iconSize.height}
       color={color}
-      isActive={isActive}
     />
   );
 };
 
 export const getIconSize = (
-  context: 'navigation' | 'button' | 'avatar' | 'notification', 
+  context: 'navigation' | 'button' | 'avatar' | 'notification',
   screenSize?: 'small' | 'medium' | 'large'
 ): { width: number; height: number } => {
   // Map lowercase size names to uppercase constants
   const sizeMap = {
     small: 'SMALL',
-    medium: 'MEDIUM', 
+    medium: 'MEDIUM',
     large: 'LARGE'
   } as const;
-  
+
   const sizeKey = sizeMap[screenSize || 'medium'];
   return ICON_CONFIG.SIZES[sizeKey];
 };

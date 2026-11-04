@@ -1,9 +1,12 @@
+import SetupScreen from '@/components/SetupScreen';
+import { setupStyles } from '@/components/SetupScreen';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { TouchableOpacity, View } from 'react-native';
 import ProfilePage from '../(profile actions)/Profile';
-import { BASE_URL } from '../../constants/api';
+import { getMediaUrl } from '../../constants/api';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
 import { DEVICE_DETAILS_SETUP } from '../../design-system/home/Constants';
@@ -48,7 +51,7 @@ const AddDevice8 = () => {
           const userData = JSON.parse(userDataString);
           setUser({
             first_name: userData.first_name || undefined,
-            profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+            profile_picture: getMediaUrl(userData.profile_picture)
           });
           setUserEmail(userData.email || '');
         }
@@ -131,8 +134,14 @@ const AddDevice8 = () => {
     if (!validateForm()) return;
 
     setIsCreatingDevice(true);
-    
+
     try {
+      // Get the BLE device ID that was stored when connecting
+      const bleDeviceId = await AsyncStorage.getItem('bleDeviceId');
+      const bleDeviceName = await AsyncStorage.getItem('bleDeviceName');
+      console.log('Retrieved BLE Device ID:', bleDeviceId);
+      console.log('Retrieved BLE Device Name:', bleDeviceName);
+
       // Map frontend device IDs to backend device_type values
       const deviceTypeMap: { [key: string]: string } = {
         'beylock': 'bey_lock',
@@ -143,39 +152,42 @@ const AddDevice8 = () => {
 
       const backendDeviceType = deviceTypeMap[deviceType] || 'bey_lock';
 
-      // Create device in backend
-      console.log('Creating device with:', {
+      // Create device in backend with BLE device ID
+      const payload: any = {
         name: deviceName,
         device_type: backendDeviceType,
         home: selectedHome,
         room: selectedRoom,
-      });
+      };
 
-      const response = await apiClient.post('home/devices/', {
-        name: deviceName,
-        device_type: backendDeviceType,
-        home: selectedHome,
-        room: selectedRoom,
-      });
+      // Add BLE device ID if available
+      if (bleDeviceId) {
+        payload.ble_device_id = bleDeviceId;
+        console.log('Including BLE device ID in device creation:', bleDeviceId);
+      }
+
+      console.log('Creating device with:', payload);
+
+      const response = await apiClient.post('home/devices/', payload);
 
       console.log('Device created successfully:', response.data);
       console.log('Device Token:', response.data.tb_device_token);
-      
+
       // Find the selected home name for display
       const selectedHomeName = homes.find(home => home.id === selectedHome)?.name || selectedHome;
-      
+
       // Store the device token for Bluetooth transmission
       if (response.data.tb_device_token) {
         await AsyncStorage.setItem('deviceToken', response.data.tb_device_token);
         console.log('Stored device token for Bluetooth transmission');
       }
-      
+
       // Clear the stored device type as we're done with it
       await AsyncStorage.removeItem('selectedDeviceType');
-      
-      // Navigate to device calibration screen with device details
+
+      // Navigate to device photo screen with device details
       router.push({
-        pathname: '/(devices)/AddDevice9',
+        pathname: '/(devices)/Lock_photo',
         params: {
           deviceName: deviceName,
           deviceLocation: selectedHomeName,
@@ -187,7 +199,7 @@ const AddDevice8 = () => {
     } catch (error: any) {
       console.error('Error creating device:', error);
       console.error('Error response:', error.response?.data);
-      
+
       // Show user-friendly error message
       let errorMessage = 'Failed to create device. Please try again.';
       if (error.response?.data) {
@@ -202,7 +214,7 @@ const AddDevice8 = () => {
           }
         }
       }
-      
+
       // Set error in the errors state
       setErrors({ deviceName: errorMessage });
     } finally {
@@ -216,10 +228,10 @@ const AddDevice8 = () => {
         router.push('/(app)/home');
         break;
       case 'devices':
-        router.push('/(tabs)/explore');
+        router.push('/(HomePage_actions)/MyDevices' as any);
         break;
       case 'energy':
-        router.push('/(tabs)/explore');
+        router.push('/(app)/home');
         break;
       case 'profile':
         setShowProfile(true);
@@ -234,7 +246,7 @@ const AddDevice8 = () => {
   }));
 
   // Filter rooms based on selected home
-  const filteredRooms = selectedHome 
+  const filteredRooms = selectedHome
     ? rooms.filter(room => room.home === selectedHome)
     : rooms;
 
@@ -258,116 +270,58 @@ const AddDevice8 = () => {
   ];
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <BackArrow width={24} height={24} color={colors.surface} />
-          </TouchableOpacity>
-          <Typography variant="h3" color={colors.surface} style={styles.headerTitle}>
-            {DEVICE_DETAILS_SETUP.NAVIGATION.TITLE}
-          </Typography>
-        </View>
-        <Typography variant="caption" color={colors.surface} style={styles.stepIndicator}>
-          {DEVICE_DETAILS_SETUP.NAVIGATION.STEP_INDICATOR}
-        </Typography>
-      </View>
-
-      {/* Main Content */}
-      <View style={styles.content}>
-        <Typography variant="h2" color={colors.text} style={styles.sectionTitle}>
-          {DEVICE_DETAILS_SETUP.SECTIONS.DEVICE_DETAILS}
-        </Typography>
-
-        {/* Device Name Field */}
+    <SetupScreen
+      step={4}
+      title="Name your lock"
+      subtitle="Pick a name and where it lives, so it's easy to find later."
+      busy={isCreatingDevice}
+      footer={
+        <AppButton
+          variant="primaryLarge"
+          title={isCreatingDevice ? 'Saving…' : DEVICE_DETAILS_SETUP.NAVIGATION.NEXT_BUTTON}
+          onPress={handleNext}
+          disabled={isCreatingDevice}
+          accessibilityLabel={DEVICE_DETAILS_SETUP.NAVIGATION.NEXT_BUTTON}
+          accessibilityHint="Tap to proceed to next step"
+        />
+      }
+    >
+      <View style={setupStyles.card}>
         <TextField
-          label={DEVICE_DETAILS_SETUP.FIELDS.DEVICE_NAME.LABEL}
+          label="Lock name"
           value={deviceName}
           onChangeText={setDeviceName}
-          placeholder={DEVICE_DETAILS_SETUP.FIELDS.DEVICE_NAME.PLACEHOLDER}
+          placeholder="e.g. Front door"
           error={errors.deviceName}
-          accessibilityLabel={DEVICE_DETAILS_SETUP.FIELDS.DEVICE_NAME.LABEL}
-          accessibilityHint={`Enter your ${DEVICE_DETAILS_SETUP.FIELDS.DEVICE_NAME.LABEL.toLowerCase()}`}
+          leftIcon={<Ionicons name="pricetag-outline" size={18} color={colors.disabled} />}
+          disabled={isCreatingDevice}
+          accessibilityLabel="Lock name"
+          accessibilityHint="Enter a name for your lock"
         />
-
-        {/* Add To Home Dropdown */}
         <Dropdown
-          label={DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_HOME.LABEL}
+          label="Home"
           value={selectedHome}
           onValueChange={handleHomeChange}
           options={homeOptions}
           placeholder={DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_HOME.PLACEHOLDER}
           error={errors.home}
-          accessibilityLabel={DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_HOME.LABEL}
-          accessibilityHint={`Select ${DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_HOME.LABEL.toLowerCase()}`}
+          disabled={isCreatingDevice}
+          accessibilityLabel="Home"
+          accessibilityHint="Select the home this lock belongs to"
         />
-
-        {/* Add To Room Dropdown */}
         <Dropdown
-          label={DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_ROOM.LABEL}
+          label="Room"
           value={selectedRoom}
           onValueChange={setSelectedRoom}
           options={roomOptions}
-          placeholder={DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_ROOM.PLACEHOLDER}
+          placeholder={selectedHome ? DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_ROOM.PLACEHOLDER : 'Choose a home first'}
           error={errors.room}
-          disabled={!selectedHome}
-          accessibilityLabel={DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_ROOM.LABEL}
-          accessibilityHint={`Select ${DEVICE_DETAILS_SETUP.FIELDS.ADD_TO_ROOM.LABEL.toLowerCase()}`}
+          disabled={!selectedHome || isCreatingDevice}
+          accessibilityLabel="Room"
+          accessibilityHint="Select the room this lock is in"
         />
-
-        {/* Next Button */}
-        <View style={styles.buttonContainer}>
-          <AppButton
-            variant="primaryLarge"
-            title={isCreatingDevice ? 'Creating Device...' : DEVICE_DETAILS_SETUP.NAVIGATION.NEXT_BUTTON}
-            onPress={handleNext}
-            disabled={isCreatingDevice}
-            accessibilityLabel={DEVICE_DETAILS_SETUP.NAVIGATION.NEXT_BUTTON}
-            accessibilityHint="Tap to proceed to next step"
-          />
-        </View>
       </View>
-
-      {/* Bottom Navigation */}
-      <BottomNavigation
-        items={bottomNavItems}
-        activeKey="home"
-        onTabPress={handleTabPress}
-      />
-
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: homes.length
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
-    </View>
+    </SetupScreen>
   );
 };
 

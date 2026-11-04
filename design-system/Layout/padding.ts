@@ -2,9 +2,9 @@ import { Spacing } from './spacing';
 
 export const Padding = {
   screenHorizontal: {
-    paddingHorizontal: Spacing.sm, 
+    paddingHorizontal: Spacing.md,
   },
   section: {
-    paddingVertical: Spacing.md, 
+    paddingVertical: Spacing.md,
   },
 };

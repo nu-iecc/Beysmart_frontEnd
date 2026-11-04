@@ -1,6 +1,8 @@
+import AuthScreen from '@/components/AuthScreen';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { FlatList, Modal, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LOGIN_STRINGS } from '@/constants/Login';
 import { ERROR_MESSAGES } from '@/constants/errors';
@@ -10,6 +12,7 @@ import FilledBackIcon from '@/design-system/icons/filled/BackIcon';
 import MobileIcon from '@/design-system/icons/outlined/MobileIcon';
 import TextField from '@/design-system/inputs/TextField';
 import { authAPI, PhoneLoginRequest } from '@/services';
+import { scale, scaleFont } from '@/utils/responsive';
 
 export default function PhoneLoginScreen() {
   const router = useRouter();
@@ -35,10 +38,10 @@ export default function PhoneLoginScreen() {
 
   const handleSendCode = async () => {
     if (!canContinue) return;
-    
+
     setIsLoading(true);
     setError('');
-    
+
     try {
       const phoneData: PhoneLoginRequest = {
         phone_number: `${dialCode}${phone}`,
@@ -65,7 +68,7 @@ export default function PhoneLoginScreen() {
         url: err.config?.url,
         baseURL: err.config?.baseURL
       });
-      
+
       if (err.response?.status === 400) {
         // Show the actual error message from the backend
         const errorMessage = err.response?.data?.error || ERROR_MESSAGES.INVALID_PHONE_FORMAT;
@@ -80,8 +83,14 @@ export default function PhoneLoginScreen() {
     }
   };
 
-  return (
-    <View style={styles.container}>
+  console.log('scale(48):', scale(48));
+  console.log('scaleFont(16):', scaleFont(16));
+  console.log('scale(Spacing.xxl):', scale(Spacing.xxl));
+  console.log('scale(Grid.gutterWidth):', scale(Grid.gutterWidth));
+  console.log('scale(0):', scale(0));
+
+  return ((
+    <AuthScreen><View style={styles.container}>
       {/* Back button */}
       <View style={styles.headerRow}>
         <AppButton
@@ -155,7 +164,7 @@ export default function PhoneLoginScreen() {
           </Typography>
         </View>
       )}
-      
+
       <View style={{ marginTop: Grid.rowGap }}>
         <AppButton
           variant="primaryLarge"
@@ -209,8 +218,8 @@ export default function PhoneLoginScreen() {
           </View>
         </View>
       </Modal>
-    </View>
-  );
+    </View></AuthScreen>
+  ));
 }
 
 const styles = StyleSheet.create({
@@ -219,16 +228,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
   },
   heroDot: {
     width: 72,
@@ -240,7 +253,8 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   title: {
     textAlign: 'center',
@@ -252,10 +266,10 @@ const styles = StyleSheet.create({
   countryPicker: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
     backgroundColor: colors.surface,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 0,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -280,13 +294,15 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: Grid.gutterWidth,
+    borderWidth: 1,
+    borderColor: '#E7EAF0',
   },
   searchInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     color: colors.text,

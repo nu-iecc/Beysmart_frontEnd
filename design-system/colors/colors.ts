@@ -47,6 +47,11 @@
     iconBackground: '#F3F4F6',
     orange:'#F97316',
     lightPink: '#FCE7F3', // Light pink for critical button background
+    
+    // Disconnected/disabled states
+    disconnectedPrimary: '#D1D5DB',
+    disconnectedBackground: '#E5E7EB',
+    disconnectedText: '#6B7280',
     lockbackground:'#6B7280',
   };
   

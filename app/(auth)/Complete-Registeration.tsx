@@ -1,3 +1,5 @@
+import AuthScreen from '@/components/AuthScreen';
+import { AUTH_COUNTRIES } from '../../design-system/auth/constants';
 import axios from "axios";
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
@@ -11,13 +13,41 @@ import { Margin } from '../../design-system/Layout/margins';
 import { Padding } from '../../design-system/Layout/padding';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { Typography } from '../../design-system/typography/typography';
+import { validatePasswordMatch, validatePasswordStrength } from '../../utils/passwordValidation';
 
 
 const CompleteRegisteration = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmPasswordError, setConfirmPasswordError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { email, phone_number, first_name, last_name } = useLocalSearchParams();
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    if (text) {
+      const validation = validatePasswordStrength(text);
+      setPasswordError(validation.isValid ? '' : validation.message);
+    } else {
+      setPasswordError('');
+    }
+    // Auto-validate confirm password if it exists
+    if (confirmPassword) {
+      const matchValidation = validatePasswordMatch(text, confirmPassword);
+      setConfirmPasswordError(matchValidation.isMatch ? '' : matchValidation.message);
+    }
+  };
+
+  const handleConfirmPasswordChange = (text: string) => {
+    setConfirmPassword(text);
+    if (text) {
+      const matchValidation = validatePasswordMatch(password, text);
+      setConfirmPasswordError(matchValidation.isMatch ? '' : matchValidation.message);
+    } else {
+      setConfirmPasswordError('');
+    }
+  };
 
   const handleCompleteRegisteration = async () => {
     setIsLoading(true);
@@ -29,17 +59,17 @@ const CompleteRegisteration = () => {
         phone_number: phone_number, // This should come from previous screen
         password,
         confirm_password: confirmPassword,
-       
+
         user_type: 'CUSTOMER', // Default to customer
       };
-      
+
       const response = await axios.post(`${BASE_URL}auth/complete-registration/`, requestData);
       router.push({
         pathname: '/(auth)/ProfilePhoto' as never,
         params: { email: email, phone_number: phone_number }
       });
-     
-      
+
+
     } catch (error: any) {
       console.error('Registration completion failed:', error);
       console.error('Error response:', error.response?.data);
@@ -51,22 +81,22 @@ const CompleteRegisteration = () => {
     }
   };
 
-  const isDisabled = !password || !confirmPassword || password !== confirmPassword || isLoading;
+  const isDisabled = !password || !confirmPassword || passwordError !== '' || confirmPasswordError !== '' || isLoading;
 
   const copy = AUTH_COPY.completeRegistration as AuthScreenCopy;
   const visuals = AUTH_VISUALS.completeRegistration;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+  return (((
+    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background, width: '100%', maxWidth: 480, alignSelf: 'center' }}>
       {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -77,13 +107,13 @@ const CompleteRegisteration = () => {
         </TouchableOpacity>
 
         {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
-              width: 96,
-              height: 96,
+              width: 72,
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -91,12 +121,12 @@ const CompleteRegisteration = () => {
           >
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
-          
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {copy.title}
           </Typography>
-          
-          <Typography variant="body" color={AUTH_THEME.secondaryText}>
+
+          <Typography variant="body" color={AUTH_THEME.secondaryText} style={{ textAlign: 'center' }}>
             {copy.subtitle}
           </Typography>
         </View>
@@ -111,13 +141,16 @@ const CompleteRegisteration = () => {
         }}
       >
         {/* Form Fields */}
+
         <View style={{ ...Margin.betweenComponents }}>
           <TextField
             label="Password"
             value={password}
-            onChangeText={setPassword}
-            placeholder={copy.fields?.emailPlaceholder || 'Create a strong password'}
+            onChangeText={handlePasswordChange}
+error={passwordError}
+            placeholder="Create a strong password"
             secureTextEntry={true}
+            showEyeIcon
           />
         </View>
 
@@ -125,23 +158,26 @@ const CompleteRegisteration = () => {
           <TextField
             label="Confirm Password"
             value={confirmPassword}
-            onChangeText={setConfirmPassword}
+            onChangeText={handleConfirmPasswordChange}
+error={confirmPasswordError}
             placeholder="Confirm your password"
             secureTextEntry={true}
+            showEyeIcon
           />
         </View>
 
+
         {/* Password Requirements */}
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
-          marginTop: Spacing.xs 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginTop: Spacing.xs
         }}>
           {visuals.securityIcon && (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           )}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -156,9 +192,9 @@ const CompleteRegisteration = () => {
           variant={isDisabled ? 'primaryDisabled' : 'primaryLarge'}
           title={isLoading ? 'Creating Account...' : copy.buttons.primaryTitle}
           icon={isLoading ? (
-            <ActivityIndicator 
-              size="small" 
-              color={AUTH_THEME.text} 
+            <ActivityIndicator
+              size="small"
+              color={AUTH_THEME.text}
               style={{ marginRight: Spacing.xs }}
             />
           ) : undefined}
@@ -168,37 +204,37 @@ const CompleteRegisteration = () => {
 
         {/* Loading Message */}
         {isLoading && (
-          <View style={{ 
-            flexDirection: 'row', 
-            alignItems: 'center', 
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
             justifyContent: 'center',
-            marginTop: Spacing.md 
+            marginTop: Spacing.md
           }}>
-            <ActivityIndicator 
-              size="small" 
-              color={colors.primary.darker} 
+            <ActivityIndicator
+              size="small"
+              color={colors.primary.darker}
               style={{ marginRight: Spacing.xs }}
             />
-            <Typography 
-              variant="caption" 
+            <Typography
+              variant="caption"
               color={colors.primary.darker}
             >
-              Setting up your account and ThingsBoard integration...
+              Creating your account...
             </Typography>
           </View>
         )}
 
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           justifyContent: 'center',
-          marginTop: Spacing.lg 
+          marginTop: Spacing.lg
         }}>
           {visuals.securityIcon && (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           )}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -207,7 +243,7 @@ const CompleteRegisteration = () => {
         </View>
       </View>
     </View>
-  );
+  )));
 };
 
 export default CompleteRegisteration;

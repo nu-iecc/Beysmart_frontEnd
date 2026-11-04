@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -12,7 +13,7 @@ import { Dropdown, TextField } from '@/design-system/inputs';
 import { Spacing } from '@/design-system/Layout/spacing';
 import { BottomNavigation } from '@/design-system/Navigation/BottomNavigation';
 import { Typography } from '@/design-system/typography/typography';
-import { BASE_URL } from '../../constants/api';
+import { getMediaUrl } from '../../constants/api';
 import apiClient from '../../utils/api';
 
 // Types
@@ -52,7 +53,7 @@ const AddHome: React.FC = () => {
           const userData = JSON.parse(userDataString);
           setUser({
             first_name: userData.first_name || undefined,
-            profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+            profile_picture: getMediaUrl(userData.profile_picture)
           });
           setUserEmail(userData.email || '');
         }
@@ -141,12 +142,12 @@ const AddHome: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error creating home:', error);
-      
-      const errorMessage = error.response?.data?.error || 
-                          error.response?.data?.detail || 
-                          error.message || 
+
+      const errorMessage = error.response?.data?.error ||
+                          error.response?.data?.detail ||
+                          error.message ||
                           'Failed to create home. Please try again.';
-      
+
       Alert.alert(
         'Error',
         errorMessage,
@@ -162,7 +163,7 @@ const AddHome: React.FC = () => {
     router.back();
   };
 
-  return (
+  return ((
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -244,7 +245,7 @@ const AddHome: React.FC = () => {
       </ScrollView>
 
       {/* Bottom Navigation */}
-      <BottomNavigation 
+      <BottomNavigation
         items={[
           { key: 'home', label: 'Home', icon: null },
           { key: 'devices', label: 'Devices', icon: null },
@@ -262,44 +263,13 @@ const AddHome: React.FC = () => {
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            setShowProfile(true);
+            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
           }
         }}
       />
 
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: 0 // We don't have homes data in this context
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
     </View>
-  );
+  ));
 };
 
 const styles = {
@@ -331,7 +301,7 @@ const styles = {
     fontWeight: '600' as const,
   },
   stepIndicator: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'right' as const,
   },
   content: {

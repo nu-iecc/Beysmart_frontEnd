@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Image, ScrollView, TouchableOpacity, View } from 'react-native';
@@ -18,7 +19,7 @@ interface RoomData {
 
 const AddRoomDone = () => {
   const params = useLocalSearchParams();
-  
+
   // Get actual data from params
   const roomData: RoomData = {
     roomName: params.roomName as string,
@@ -59,7 +60,7 @@ const AddRoomDone = () => {
   };
 
   const handleAddDevices = () => {
-    // Navigate to add device screen which we will create later
+    router.push('/(devices)/AddDevice2' as never);
   };
 
   const handleGoToHomepage = () => {
@@ -81,7 +82,7 @@ const AddRoomDone = () => {
     }
   };
 
-  return (
+  return ((
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -95,16 +96,16 @@ const AddRoomDone = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
          {/* Celebration Illustration */}
          <View style={styles.celebrationContainer}>
-           <Celebration 
-             width={80} 
-             height={80} 
+           <Celebration
+             width={80}
+             height={80}
            />
          </View>
 
@@ -130,7 +131,7 @@ const AddRoomDone = () => {
                </View>
              )}
            </View>
-           
+
            <View style={styles.roomDetails}>
              <Typography variant="h2" color={colors.surface} style={styles.roomName}>
                {roomData.roomName}
@@ -150,9 +151,9 @@ const AddRoomDone = () => {
              accessibilityLabel="Add devices to room"
              accessibilityHint="Add smart devices to your new room"
            />
-           
+
            <View style={styles.buttonSpacing} />
-           
+
            <AppButton
              variant="secondaryLarge"
              title="Go To Homepage"
@@ -163,7 +164,7 @@ const AddRoomDone = () => {
          </View>
       </ScrollView>
     </View>
-  );
+  ));
 };
 
 const styles = {
@@ -240,7 +241,7 @@ const styles = {
      alignItems: 'center' as const,
    },
    roomName: {
-     fontSize: 28,
+     fontSize: 24,
      fontWeight: '600' as const,
      marginBottom: Spacing.sm,
      textAlign: 'center' as const,

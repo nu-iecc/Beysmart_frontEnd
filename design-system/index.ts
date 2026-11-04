@@ -3,4 +3,5 @@ export * from './Buttons';
 export * from './colors';
 export * from './icons';
 export * from './Layout';
+export * from './Lock';
 export * from './typography';

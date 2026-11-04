@@ -122,12 +122,12 @@ const IconGalleryScreen = () => {
       {/* Icon Gallery */}
       <View style={styles.iconGallery}>
         {Object.entries(Icons)
-          .filter(([name, IconComponent]) => 
-            typeof IconComponent === 'function' && 
-            name !== 'getIconSize' && 
-            name !== 'renderIcon' && 
-            name !== 'createTabItems' && 
-            name !== 'isValidIconKey' && 
+          .filter(([name, IconComponent]) =>
+            typeof IconComponent === 'function' &&
+            name !== 'getIconSize' &&
+            name !== 'renderIcon' &&
+            name !== 'createTabItems' &&
+            name !== 'isValidIconKey' &&
             name !== 'getIconKeysByType' &&
             !name.startsWith('FilledIcons') &&
             !name.startsWith('OutlinedIcons') &&
@@ -149,27 +149,27 @@ const IconGalleryScreen = () => {
 }
 
 const styles = StyleSheet.create({
-  container: {
+container: {
     padding: 16,
     flexDirection: 'column',
   },
-  iconGallery: {
+iconGallery: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 16,
     justifyContent: 'flex-start'
   },
-  iconBox: {
+iconBox: {
     width: 72,
     alignItems: 'center',
     marginBottom: 24
   },
-  label: {
+label: {
     fontSize: 10,
     marginTop: 8,
     textAlign: 'center'
   },
-  sectionTitle: {
+sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 16,

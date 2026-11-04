@@ -1,3 +1,4 @@
+import AuthScreen from '@/components/AuthScreen';
 import axios from "axios";
 import { router } from 'expo-router';
 import React, { useState } from 'react';
@@ -24,9 +25,9 @@ import { Typography } from '../../design-system/typography/typography';
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
 
-  // Email validation function - requires .com domain
+  // Email validation function - accepts any valid TLD (.com, .net, .org, .io, etc.)
   const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.com$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
@@ -34,7 +35,7 @@ import { Typography } from '../../design-system/typography/typography';
   const handleEmailChange = (text: string) => {
     setEmail(text);
     if (text.length > 0 && !validateEmail(text)) {
-      setEmailError('Please enter a valid email address(e.g., user@example.com)');
+      setEmailError('Please enter a valid email address');
     } else {
       setEmailError('');
     }
@@ -42,32 +43,35 @@ import { Typography } from '../../design-system/typography/typography';
 
   const handleRegister = async () => {
     try {
+      // Combine country dial code with phone number for full international format
+      const fullPhoneNumber = selectedCountry.dial + phoneNumber;
+
       const requestData = {
         first_name: firstName,
         last_name: lastName,
         email,
-        phone_number: phoneNumber,
+        phone_number: fullPhoneNumber,
         country: selectedCountry.name,
       };
-      
+
       const response = await axios.post(`${BASE_URL}auth/register/`, requestData, {
         timeout: 15000, // 15 seconds timeout
         headers: {
           'Content-Type': 'application/json',
         }
       });
-      
+
       router.push({
-        pathname: '/(auth)/verify-otp', 
+        pathname: '/(auth)/verify-otp',
         params: {
-          email: email, 
-          phone_number: phoneNumber, 
+          email: email,
+          phone_number: fullPhoneNumber,
           first_name: firstName,
           last_name: lastName,
           flow: 'register'
         }
       });
-      
+
     }  catch (error: any) {
       const errorMessage = error.response?.data?.message || error.message || 'Registration failed. Please try again.';
       Alert.alert('Registration Failed', errorMessage);
@@ -79,17 +83,17 @@ import { Typography } from '../../design-system/typography/typography';
 
   const visuals = AUTH_VISUALS.register;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+  return ((
+    <AuthScreen>
       {/* Header (fixed) */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48, // icon container 48px (6x base unit)
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -100,13 +104,13 @@ import { Typography } from '../../design-system/typography/typography';
         </TouchableOpacity>
 
         {/* User Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
-              width: 96, // 12x base unit
-              height: 96,
+              width: 72, // 12x base unit
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -114,11 +118,11 @@ import { Typography } from '../../design-system/typography/typography';
           >
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
-          
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {copy.title}
           </Typography>
-          
+
           {!!copy.subtitle && (
             <Typography variant="body" color={AUTH_THEME.secondaryText}>
               {copy.subtitle}
@@ -128,9 +132,7 @@ import { Typography } from '../../design-system/typography/typography';
       </View>
 
       {/* Form (scrollable) */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
+      <View style={{
           ...Padding.screenHorizontal,
           paddingBottom: Spacing.xl,
         }}
@@ -205,9 +207,9 @@ import { Typography } from '../../design-system/typography/typography';
             onChangeText={setPhoneNumber}
             placeholder={copy.fields?.phonePlaceholder || '(123) 456-7890'}
             leftIcon={
-              <View style={{ 
-                paddingRight: 8, 
-                borderRightWidth: 1, 
+              <View style={{
+                paddingRight: 8,
+                borderRightWidth: 1,
                 borderRightColor: AUTH_THEME.border,
                 marginRight: 8
               }}>
@@ -217,16 +219,16 @@ import { Typography } from '../../design-system/typography/typography';
               </View>
             }
           />
-          
+
           {/* WhatsApp Info */}
-          <View style={{ 
-            flexDirection: 'row', 
-            alignItems: 'center', 
-            marginTop: Spacing.xs 
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: Spacing.xs
           }}>
             <visuals.headerIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
-            <Typography 
-              variant="caption" 
+            <Typography
+              variant="caption"
               color={AUTH_THEME.secondaryText}
               style={{ marginLeft: 4 }}
             >
@@ -234,7 +236,8 @@ import { Typography } from '../../design-system/typography/typography';
             </Typography>
           </View>
         </View>
-      </ScrollView>
+
+      </View>
 
       {/* Country Picker Modal */}
       <Modal
@@ -276,17 +279,17 @@ import { Typography } from '../../design-system/typography/typography';
           disabled={isDisabled}
         />
 
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           justifyContent: 'center',
-          marginTop: Spacing.lg 
+          marginTop: Spacing.lg
         }}>
           {visuals.securityIcon ? (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           ) : null}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -294,8 +297,8 @@ import { Typography } from '../../design-system/typography/typography';
           </Typography>
         </View>
       </View>
-    </View>
-  );
+    </AuthScreen>
+  ));
 };
 
 

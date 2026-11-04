@@ -4,11 +4,12 @@ import { ImageBackground, StyleSheet, View } from 'react-native';
 
 import { LOGIN_STRINGS } from '@/constants/Login';
 import { AppButton, colors, Spacing, Typography } from '@/design-system';
+import { scale, scaleFont } from '@/utils/responsive';
 
 export default function WelcomeScreen() {
   const router = useRouter();
 
-  return (
+  return ((
     <ImageBackground
       source={require('../../assets/images/Vector.png')}
       resizeMode="cover"
@@ -39,7 +40,7 @@ export default function WelcomeScreen() {
         </View>
       </View>
     </ImageBackground>
-  );
+  ));
 }
 
 const styles = StyleSheet.create({

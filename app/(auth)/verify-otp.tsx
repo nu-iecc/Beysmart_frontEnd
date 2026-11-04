@@ -4,6 +4,7 @@ import axios from "axios";
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, TouchableOpacity, View } from 'react-native';
+import BiometricSetupModal from '../../components/BiometricSetupModal';
 import { BASE_URL } from '../../constants/api';
 import { AUTH_COPY, AUTH_TEXT, AUTH_THEME, AUTH_VISUALS } from '../../design-system/auth/constants';
 import { AppButton } from '../../design-system/Buttons/Buttons';
@@ -11,13 +12,14 @@ import { OTPInputField } from '../../design-system/inputs';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { AccountSettingsConstants as ACC } from '../../design-system/Profile actions/Constants';
 import { Typography } from '../../design-system/typography/typography';
+import { biometricsService } from '../../services';
 import apiClient from '../../utils/api';
 
 const VerifyOTPScreen = () => {
   const { email, phone_number, first_name, last_name, flow, fromAccountSettings } = useLocalSearchParams();
-  
+
   // Use delete account constants if flow is delete-account, otherwise use default verify OTP constants
-  const copy = flow === 'delete-account' 
+  const copy = flow === 'delete-account'
     ? {
         title: ACC.DELETE_ACCOUNT.VERIFY_TITLE,
         subtitleEmail: ACC.DELETE_ACCOUNT.VERIFY_SUBTITLE_EMAIL,
@@ -26,12 +28,14 @@ const VerifyOTPScreen = () => {
         continueTitle: ACC.DELETE_ACCOUNT.VERIFY_BUTTON_TITLE,
       }
     : AUTH_COPY.verifyOtp as any;
-  
+
   const visuals = AUTH_VISUALS.verifyOtp;
   const [otp, setOtp] = useState(['', '', '', '']);
   const [timer, setTimer] = useState(59);
   const [canResend, setCanResend] = useState(false);
-  
+  const [showBiometricModal, setShowBiometricModal] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(false);
+
   const handleVerifyOTP = async () => {
     try {
       // Handle delete account flow separately (requires authentication)
@@ -40,28 +44,28 @@ const VerifyOTPScreen = () => {
         try {
           // Ensure CSRF is hydrated for session-protected flow
           try { await apiClient.get('auth/csrf-token/'); } catch {}
-          
+
           // Call the authenticated verify OTP API for delete account
           const otpRequestData = {
             otp: otp.join(''),
             email: email || undefined,
             phone_number: phone_number || undefined,
           };
-          
+
           await apiClient.post('auth/verify-otp-auth/', otpRequestData);
-          
+
           // Clear all user data from AsyncStorage
           await AsyncStorage.multiRemove([
             'isAuthenticated',
-            'userData', 
+            'userData',
             'loginMethod',
             'csrftoken',
             'twoFactorEnabled'
           ]);
-          
+
           // Show success message
           Alert.alert(
-            'Account Deletion Requested', 
+            'Account Deletion Requested',
             'Your account deletion has been requested. Your account will be soft deleted for 60 days and then permanently deleted. You have been logged out.',
             [
               {
@@ -90,12 +94,12 @@ const VerifyOTPScreen = () => {
         const response = fromAccountSettings === 'true'
           ? await apiClient.post('auth/verify-otp/', requestData)
           : await axios.post(`${BASE_URL}auth/verify-otp/`, requestData);
-          
+
         if(flow === 'register'){
           router.push({
             pathname: '/(auth)/Complete-Registeration',
-            params: { 
-              email: email, 
+            params: {
+              email: email,
               phone_number: phone_number,
               first_name: first_name,
               last_name: last_name
@@ -116,22 +120,39 @@ const VerifyOTPScreen = () => {
             await AsyncStorage.setItem('isAuthenticated', 'true');
             await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
             await AsyncStorage.setItem('loginMethod', 'phone');
-            
+
             // Store CSRF token if provided
             if(response.data.csrf_token) {
               await AsyncStorage.setItem('csrftoken', response.data.csrf_token);
             }
           }
-          
-          // Navigate to home/main app screen
-          router.replace('/(app)/home'); // or whatever your main screen route is
+
+          // Reset biometric attempts counter on successful OTP login
+          await biometricsService.resetBiometricAttempts();
+
+          // Check if this is the first login and if device supports biometrics
+          const isFirstLogin = await biometricsService.isFirstLogin();
+          const canSetupBiometrics = await biometricsService.canSetupBiometrics();
+
+          console.log('🔐 Biometric setup check:', { isFirstLogin, canSetupBiometrics });
+
+          if (isFirstLogin && canSetupBiometrics) {
+            console.log('🔐 Showing biometric setup modal');
+            // Show biometric setup modal instead of navigating immediately
+            setPendingNavigation(true);
+            setShowBiometricModal(true);
+          } else {
+            console.log('🔐 Skipping biometric setup, navigating to home');
+            // Navigate to home/main app screen
+            router.replace('/(app)/home');
+          }
         }
-        
+
         // Show success message for non-delete flows
         Alert.alert('Success', response.data.message);
       }
-      
-  
+
+
     } catch (error: any) {
       console.error('OTP verification failed:', error);
       console.error('Error response:', error.response?.data);
@@ -140,7 +161,7 @@ const VerifyOTPScreen = () => {
       Alert.alert('OTP Verification Failed', errorMessage);
     }
   };
-  
+
 
   useEffect(() => {
     if (timer > 0) {
@@ -162,21 +183,41 @@ const VerifyOTPScreen = () => {
     }
   };
 
+  // Biometric setup handlers
+  const handleBiometricEnable = () => {
+    setShowBiometricModal(false);
+    Alert.alert(
+      'Biometrics Enabled',
+      'You can now use biometric authentication to login.',
+      [{ text: 'OK', onPress: () => router.replace('/(app)/home') }]
+    );
+  };
 
+  const handleBiometricSkip = () => {
+    setShowBiometricModal(false);
+    router.replace('/(app)/home');
+  };
+
+  const handleBiometricClose = () => {
+    setShowBiometricModal(false);
+    if (pendingNavigation) {
+      router.replace('/(app)/home');
+    }
+  };
 
   const isOtpComplete = otp.every(digit => digit !== '');
 
-  return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+  return ((
+    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
     {/* Header (fixed) */}
-    <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+    <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
       {/* Back Button */}
       <TouchableOpacity
         style={{
-          width: 48, // icon container 48px (6x base unit)
-          height: 48,
+          width: 44,
+          height: 44,
           backgroundColor: AUTH_THEME.surface,
-          borderRadius: 12,
+          borderRadius: 14,
           alignItems: 'center',
           justifyContent: 'center',
           marginBottom: Spacing.lg,
@@ -193,19 +234,19 @@ const VerifyOTPScreen = () => {
         contentContainerStyle={{
           alignItems: 'center',
           paddingHorizontal: Spacing.md,
-          paddingTop: Spacing.xl,
+          paddingTop: Spacing.sm,
           paddingBottom: Spacing.xl,
         }}
         showsVerticalScrollIndicator={false}
       >
         {/* Icon Circle */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.md, width: '100%' }}>
           <View
             style={{
-              width: 96, // 12x base unit
-              height: 96,
+              width: 72, // 12x base unit
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -214,15 +255,19 @@ const VerifyOTPScreen = () => {
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
           </View>
-          
+
 
         {/* Title */}
-        <Typography variant="h3" style={{
+        <Typography variant="h1" style={{
           textAlign: 'center',
           marginBottom: Spacing.sm,
           color: AUTH_THEME.text,
         }}>
-          {copy.title}
+          {flow === 'register'
+            ? 'Verify Your Account'
+            : flow === 'reset-password'
+              ? email ? 'Verify your email' : 'Verify your phone'
+              : copy.title}
         </Typography>
 
         {/* Subtitle */}
@@ -231,15 +276,17 @@ const VerifyOTPScreen = () => {
           marginBottom: Spacing.xl,
           color: AUTH_THEME.secondaryText,
           paddingHorizontal: Spacing.md,
+          maxWidth: 360,
         }}>
-          {phone_number ? (copy.subtitlePhone || '') : (copy.subtitleEmail || '')}
+          {flow === 'register' ? 'Enter the latest code sent to your email or WhatsApp. The code expires after 5 minutes.' : phone_number ? (copy.subtitlePhone || '') : (copy.subtitleEmail || '')}
         </Typography>
 
         {/* OTP Input Fields */}
         <View style={{
           width: '100%',
-          marginBottom: Spacing.lg,
-          paddingHorizontal: Spacing.md,
+          marginBottom: Spacing.md,
+          paddingHorizontal: Spacing.xs,
+          maxWidth: 360,
         }}>
           <OTPInputField
             length={4}
@@ -253,46 +300,53 @@ const VerifyOTPScreen = () => {
         </View>
 
         {/* Resend Timer */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={{
-            marginBottom: Spacing.lg,
-          }} 
+            marginBottom: Spacing.md,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: Spacing.xs,
+            borderRadius: 14,
+            backgroundColor: '#EEF1F4',
+          }}
           onPress={handleResendCode}
-          disabled={!canResend}
+          disabled={!canResend || false}
         >
           <Typography variant="body" style={{
             color: AUTH_THEME.secondaryText,
           }}>
-            {copy.resendPrefix}{' '}
+            {canResend ? 'Resend code' : copy.resendPrefix}{' '}
             <Typography variant="body" style={{
               fontWeight: '700',
               color: AUTH_THEME.text,
             }}>
-              {timer}s
+              {canResend ? '' : `${timer}s`}
             </Typography>
           </Typography>
         </TouchableOpacity>
 
         {/* Continue Button */}
-        <AppButton
-          variant="primaryLarge"
-          title={copy.continueTitle}
-          icon={visuals.actionIcon ? <visuals.actionIcon width={15} height={15} color={AUTH_THEME.text} /> : undefined}
-          onPress={handleVerifyOTP}
-          disabled={!isOtpComplete}
-        />
 
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
+        <View style={{ width: '100%', maxWidth: 360 }}>
+          <AppButton
+            variant="primaryLarge"
+            title={false ? 'Please wait...' : copy.continueTitle}
+            icon={visuals.actionIcon ? <visuals.actionIcon width={15} height={15} color={AUTH_THEME.text} /> : undefined}
+            onPress={handleVerifyOTP}
+            disabled={!isOtpComplete || false}
+          />
+        </View>
+
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           justifyContent: 'center',
-          marginTop: Spacing.xl 
+          marginTop: Spacing.xl
         }}>
           {visuals.securityIcon ? (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           ) : null}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -300,8 +354,14 @@ const VerifyOTPScreen = () => {
           </Typography>
         </View>
       </ScrollView>
-    </View>
-  );
+    <BiometricSetupModal
+        visible={showBiometricModal}
+        onClose={handleBiometricClose}
+        onEnable={handleBiometricEnable}
+        onSkip={handleBiometricSkip}
+        phoneNumber={phone_number as string || ''}
+      /></View>
+  ));
 };
 
 export default VerifyOTPScreen;

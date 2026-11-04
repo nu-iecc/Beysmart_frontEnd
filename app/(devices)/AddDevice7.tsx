@@ -1,3 +1,4 @@
+import { SetupMoment } from '@/components/SetupScreen';
 import { router } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
@@ -14,36 +15,20 @@ const AddDevice7 = () => {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Celebration Illustration */}
-      <View style={styles.illustrationContainer}>
-        <Celebration 
-          width={DEVICE_PAIRING_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} 
-          height={DEVICE_PAIRING_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} 
-        />
-      </View>
-
-      {/* Success Message */}
-      <View style={styles.messageContainer}>
-        <Typography variant="h1" color={DEVICE_PAIRING_SUCCESS.COLORS.TITLE_TEXT} style={styles.title}>
-          {DEVICE_PAIRING_SUCCESS.CONTENT.TITLE}
-        </Typography>
-        <Typography variant="h2" color={DEVICE_PAIRING_SUCCESS.COLORS.SUBTITLE_TEXT} style={styles.subtitle}>
-          {DEVICE_PAIRING_SUCCESS.CONTENT.SUBTITLE}
-        </Typography>
-      </View>
-
-      {/* Action Button */}
-      <View style={styles.buttonContainer}>
+    <SetupMoment
+      art={<Celebration width={DEVICE_PAIRING_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} height={DEVICE_PAIRING_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} />}
+      title="Lock paired"
+      subtitle="Your lock is paired over Bluetooth. Next, give it a name."
+      actions={
         <AppButton
           variant={DEVICE_PAIRING_SUCCESS.ACTION.VARIANT}
-          title={DEVICE_PAIRING_SUCCESS.ACTION.TEXT}
+          title="Continue"
           onPress={handleSetupDeviceDetails}
           accessibilityLabel={DEVICE_PAIRING_SUCCESS.ACTION.TEXT}
           accessibilityHint="Tap to setup device details"
         />
-      </View>
-    </View>
+      }
+    />
   );
 };
 

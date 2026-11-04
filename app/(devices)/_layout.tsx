@@ -19,6 +19,7 @@ export default function DevicesGroupLayout() {
       <Stack.Screen name="AddDevice14" options={{ headerShown: false }} />
       <Stack.Screen name="AddDevice15" options={{ headerShown: false }} />
       <Stack.Screen name="AddDevice16" options={{ headerShown: false }} />
+      <Stack.Screen name="Lock_photo" options={{ headerShown: false }} />
 
     </Stack>
   );

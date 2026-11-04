@@ -10,9 +10,9 @@ const SceneCardTesting = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+container: {
     padding: 16,
-  },
+  }
 });
 
 export default SceneCardTesting;

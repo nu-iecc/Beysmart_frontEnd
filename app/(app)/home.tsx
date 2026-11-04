@@ -1,45 +1,54 @@
+import LockCard, { AddLockCard, lockRole } from '@/components/LockCard';
+import ProfileSection from '@/components/ProfileSection';
+import ComingSoon from '@/components/ComingSoon';
+import LockLoader from '@/components/LockLoader';
+import HomeDropdown from '@/components/HomeDropdown';
+import { Ionicons } from '@expo/vector-icons';
+import { toast } from 'sonner-native';
+import { Animated, RefreshControl } from 'react-native';
+import { Spacing } from '@/design-system/Layout/spacing';
 import { AppButton } from '@/design-system/Buttons/Buttons'
 import { colors } from '@/design-system/colors/colors'
 import { HOME_SETUP, SUPPORT_BODY, SUPPORT_EMAIL, SUPPORT_SUBJECT } from '@/design-system/home/Constants'
 import { SetupStep, completeSetupStep, resetSetupSteps } from '@/design-system/home/HomeSetupUtils'
 import {
-  CorrectIcon,
-  Door,
-  HomeIcon,
-  LightIcon,
-  LockIcon,
-  Robot
+    CorrectIcon,
+    Door,
+    HomeIcon,
+    LightIcon,
+    LockIcon,
+    Robot
 } from '@/design-system/icons'
-import { Spacing } from '@/design-system/Layout/spacing'
 import { BottomNavigation, TopNavigation } from '@/design-system/Navigation'
 import type { BottomNavigationItem, Home as DSHome, User as DSUser } from '@/design-system/Navigation/Types'
 import { Typography } from '@/design-system/typography/typography'
+import { scale } from '@/utils/responsive'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Linking, ScrollView, TouchableOpacity, View } from 'react-native'
 import ProfilePage from '../(profile actions)/Profile'
-import { BASE_URL } from '../../constants/api'
+import { getMediaUrl } from '../../constants/api'
 import apiClient from '../../utils/api'
 
 const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
     const size = HOME_SETUP.DIMENSIONS.STEP_ICON.SIZE
     const borderRadius = HOME_SETUP.DIMENSIONS.STEP_ICON.BORDER_RADIUS
-  
+
     const backgroundColor = step.isCompleted
       ? colors.completedstep
       : step.isActive
       ? colors.activestep
       : colors.inactivestep
-  
+
     const IconComponent = useMemo(() => {
-      
-      const iconColor = step.isCompleted 
-        ? colors.surface          
-        : step.isActive 
-        ? colors.surface           
-        : colors.notactiveicon           
-      
+
+      const iconColor = step.isCompleted
+        ? colors.surface
+        : step.isActive
+        ? colors.surface
+        : colors.notactiveicon
+
       switch (step.iconKey) {
         case 'home':
           return <HomeIcon width={22} height={22} color={iconColor} />
@@ -53,7 +62,7 @@ const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
           return <HomeIcon width={22} height={22} color={iconColor} />
       }
     }, [step.iconKey, step.isCompleted, step.isActive]) // Added missing dependencies
-  
+
     return (
       <View
         style={{
@@ -188,8 +197,13 @@ const Header: React.FC<{
   )
 })
 
+Header.displayName = 'HomeHeader'
+
 const HomeScreen: React.FC = () => {
   const params = useLocalSearchParams()
+  useEffect(() => {
+    if (typeof params.tab === 'string' && ['home','devices','energy','profile'].includes(params.tab)) setActiveTab(params.tab)
+  }, [params.tab])
   const [steps, setSteps] = useState<SetupStep[]>(() => resetSetupSteps())
   const [activeHomeId, setActiveHomeId] = useState<number | undefined>(undefined)
   const [activeTab, setActiveTab] = useState<string>('home')
@@ -198,15 +212,38 @@ const HomeScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [homes, setHomes] = useState<DSHome[]>([])
   const [isLoadingHomes, setIsLoadingHomes] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const contentOpacity = React.useRef(new Animated.Value(1)).current
+  const handleRefresh = useCallback(() => { setRefreshing(true); setRefreshKey(value => value + 1) }, [])
+  useEffect(() => {
+    const selected = Number(params.selectedHomeId)
+    if (Number.isFinite(selected) && homes.some(home => home.id === selected)) setActiveHomeId(selected)
+  }, [params.selectedHomeId, homes])
   const [rooms, setRooms] = useState<any[]>([])
   const [isLoadingRooms, setIsLoadingRooms] = useState(true)
+  const [devices, setDevices] = useState<any[]>([])
   const [showProfile, setShowProfile] = useState(false)
 
+  // Combined loading state - wait for all critical data
+  const isLoadingData = isLoading || isLoadingHomes || (isLoadingRooms && devices.length === 0 && !refreshing)
+  useEffect(() => { if (!isLoadingRooms) setRefreshing(false) }, [isLoadingRooms])
+
+  // Compute active home from homes array
+  const activeHome = useMemo(() => {
+    return homes.find(home => home.id === activeHomeId)
+  }, [homes, activeHomeId])
+
+  // Check if setup is complete (first 3 steps completed)
+  const isSetupComplete = useMemo(() => {
+    return steps.slice(0, 3).every(step => step.isCompleted)
+  }, [steps])
+
   // Function to update setup steps based on current home's state
-  const updateStepsForCurrentHome = useCallback((homeId: number | undefined, rooms: any[]) => {
+  const updateStepsForCurrentHome = useCallback((homeId: number | undefined, rooms: any[], devicesList: any[] = []) => {
     // Reset all steps first
     let newSteps = resetSetupSteps()
-    
+
     if (!homeId) {
       // No home selected - all steps locked except add_home
       setSteps(newSteps)
@@ -223,8 +260,10 @@ const HomeScreen: React.FC = () => {
       newSteps = completeSetupStep(newSteps, 'add_room')
     }
 
-    // Step 3: Connect your device - only available if room exists
-    // This step will be unlocked automatically by the step logic
+    // Step 3: Connect your device - completed if current home has devices
+    if (devicesList.length > 0) {
+      newSteps = completeSetupStep(newSteps, 'connect_device')
+    }
 
     setSteps(newSteps)
   }, [homes])
@@ -239,7 +278,7 @@ const HomeScreen: React.FC = () => {
         const userData = JSON.parse(userDataString)
         setUser({
           first_name: userData.first_name || undefined,
-          profile_picture: userData.profile_picture ? `${BASE_URL.replace('/api/', '')}${userData.profile_picture}` : undefined
+          profile_picture: getMediaUrl(userData.profile_picture)
         })
         if (userData.email) {
           setUserEmail(userData.email)
@@ -257,7 +296,7 @@ const HomeScreen: React.FC = () => {
           const data = res.data
           setUser({
             first_name: data.first_name || undefined,
-            profile_picture: data.profile_picture ? `${BASE_URL.replace('/api/', '')}${data.profile_picture}` : undefined
+            profile_picture: getMediaUrl(data.profile_picture)
           })
           if (data.email) {
             setUserEmail(data.email)
@@ -308,7 +347,7 @@ const HomeScreen: React.FC = () => {
           name: home.name
         }))
         setHomes(homesData)
-        
+
         // Set first home as active if available
         if (homesData.length > 0) {
           setActiveHomeId(homesData[0].id)
@@ -329,41 +368,47 @@ const HomeScreen: React.FC = () => {
 
   // Load rooms from API based on active home
   useEffect(() => {
-    const loadRooms = async () => {
+    const loadRoomsAndDevices = async () => {
       if (!activeHomeId) {
         setRooms([])
+        setDevices([])
         setIsLoadingRooms(false)
-        updateStepsForCurrentHome(undefined, [])
+        updateStepsForCurrentHome(undefined, [], [])
         return
       }
 
       try {
         setIsLoadingRooms(true)
-        
+
         // Load all rooms and filter by home ID
-        const response = await apiClient.get('home/rooms/')
-        
-        // Filter rooms by the active home ID
-        const filteredRooms = response.data.filter((room: any) => {
+        const roomsResponse = await apiClient.get('home/rooms/')
+        const filteredRooms = roomsResponse.data.filter((room: any) => {
           return room.home === activeHomeId || room.home === String(activeHomeId) || String(room.home) === String(activeHomeId)
         })
-        
         setRooms(filteredRooms)
-        
+
+        // Load all devices and filter by home ID
+        const devicesResponse = await apiClient.get('home/devices/')
+        const filteredDevices = devicesResponse.data.filter((device: any) => {
+          return device.home === activeHomeId || device.home === String(activeHomeId) || String(device.home) === String(activeHomeId)
+        })
+        setDevices(filteredDevices)
+
         // Update setup steps based on current home's state
-        updateStepsForCurrentHome(activeHomeId, filteredRooms)
-        
+        updateStepsForCurrentHome(activeHomeId, filteredRooms, filteredDevices)
+
       } catch (error: any) {
-        console.error('Error loading rooms:', error);
+        console.error('Error loading rooms/devices:', error);
         setRooms([])
-        updateStepsForCurrentHome(activeHomeId, [])
+        setDevices([])
+        updateStepsForCurrentHome(activeHomeId, [], [])
       } finally {
         setIsLoadingRooms(false)
       }
     }
 
-    loadRooms()
-  }, [activeHomeId, updateStepsForCurrentHome])
+    loadRoomsAndDevices()
+  }, [activeHomeId, updateStepsForCurrentHome, refreshKey])
 
   // Handle step completion from navigation params
   useEffect(() => {
@@ -371,27 +416,37 @@ const HomeScreen: React.FC = () => {
       const stepId = params.completedStep as string
       setSteps(prevSteps => completeSetupStep(prevSteps, stepId))
     }
-    
-    // Handle add_room completion
-    if (params.add_room === 'true') {
-      // Reload rooms and update steps for current home
-      const reloadRooms = async () => {
+
+    // Handle add_room or add_device completion
+    if (params.add_room === 'true' || params.add_device === 'true') {
+      // Reload rooms and devices, then update steps for current home
+      const reloadData = async () => {
         if (activeHomeId) {
           try {
-            const response = await apiClient.get('home/rooms/')
-            const filteredRooms = response.data.filter((room: any) => 
+            // Reload rooms
+            const roomsResponse = await apiClient.get('home/rooms/')
+            const filteredRooms = roomsResponse.data.filter((room: any) =>
               room.home === activeHomeId || room.home === String(activeHomeId) || String(room.home) === String(activeHomeId)
             )
             setRooms(filteredRooms)
-            updateStepsForCurrentHome(activeHomeId, filteredRooms)
+
+            // Reload devices
+            const devicesResponse = await apiClient.get('home/devices/')
+            const filteredDevices = devicesResponse.data.filter((device: any) =>
+              device.home === activeHomeId || device.home === String(activeHomeId) || String(device.home) === String(activeHomeId)
+            )
+            setDevices(filteredDevices)
+
+            // Update steps with both rooms and devices
+            updateStepsForCurrentHome(activeHomeId, filteredRooms, filteredDevices)
           } catch (error) {
-            console.error('Error reloading rooms:', error)
+            console.error('Error reloading data:', error)
           }
         }
       }
-      reloadRooms()
+      reloadData()
     }
-  }, [params.completedStep, params.add_room, activeHomeId, updateStepsForCurrentHome])
+  }, [params.completedStep, params.add_room, params.add_device, activeHomeId, updateStepsForCurrentHome])
   const bottomNavItems: BottomNavigationItem[] = [
     { key: 'home', label: 'Home', icon: null },
     { key: 'devices', label: 'Devices', icon: null },
@@ -400,16 +455,27 @@ const HomeScreen: React.FC = () => {
   ]
 
   const onAction = useCallback((step: SetupStep) => {
+    console.log('🔧 onAction called for step:', step.key, {
+      isActive: step.isActive,
+      isCompleted: step.isCompleted,
+      isLocked: step.isLocked
+    })
+
     const canProceed = step.isActive && !step.isCompleted && !step.isLocked
-    if (!canProceed) return
+    if (!canProceed) {
+      console.log('❌ Cannot proceed with step:', step.key)
+      return
+    }
 
     // Handle navigation for specific steps
     if (step.key === 'add_home') {
+      console.log('🏠 Navigating to AddHome')
       router.push('/(home)/AddHome')
       return
     }
 
     if (step.key === 'add_room') {
+      console.log('🚪 Navigating to AddRoom')
       router.push({
         pathname: '/(room)/AddRoom',
         params: { homeId: activeHomeId?.toString() }
@@ -418,121 +484,104 @@ const HomeScreen: React.FC = () => {
     }
 
     if (step.key === 'connect_device') {
+      console.log('🔌 Navigating to AddDevice2')
       router.push('/(devices)/AddDevice2')
+      return
+    }
+
+    if (step.key === 'start_using') {
+      // Navigate to lock control screen to start using the device
+      // If devices are available, use the first one's info, otherwise use defaults
+      if (devices.length > 0) {
+        const firstDevice = devices[0]
+        router.push({
+          pathname: '/(Lock/Unlock)/LockControlScreen',
+          params: {
+            deviceId: firstDevice.id?.toString() || '',
+            deviceName: firstDevice.name || 'Smart Lock',
+            homeName: firstDevice.home_name || firstDevice.room_name || activeHome?.name || 'Home',
+          },
+        } as never)
+      } else {
+        router.push('/(Lock/Unlock)/LockControlScreen' as never)
+      }
       return
     }
 
     // For other steps, complete them normally
     const updated = completeSetupStep(steps, step.id)
     setSteps(updated)
-  }, [steps])
+  }, [steps, activeHomeId, devices, activeHome])
 
   const handleTabPress = useCallback((key: string) => {
-    setActiveTab(key)
-    if (key === 'profile') {
-      setShowProfile(true)
-    }
-    // Add other tab navigation handlers as needed
-  }, [])
+    Animated.timing(contentOpacity, { toValue: 0, duration: 90, useNativeDriver: true }).start(() => {
+      setActiveTab(key)
+      Animated.timing(contentOpacity, { toValue: 1, duration: 150, useNativeDriver: true }).start()
+    })
+  }, [contentOpacity])
 
-  // Show loading state while fetching user data
-  if (isLoading) {
+  // Handle lock card press
+  const handleLockPress = useCallback((device: any) => {
+    router.push({
+      pathname: '/(Lock/Unlock)/LockControlScreen',
+      params: {
+        deviceId: device.id.toString(),
+        role: lockRole(device),
+        deviceName: device.name,
+        homeName: device.home_name || device.room_name || activeHome?.name || 'Home',
+      },
+    } as never)
+  }, [activeHome])
+
+  // Get room name from room ID
+  const getRoomName = useCallback((device: any) => {
+    if (device.room_name) return device.room_name
+    if (device.room && rooms.length > 0) {
+      const room = rooms.find(r => r.id === device.room || String(r.id) === String(device.room))
+      if (room) return room.name
+    }
+    return device.home_name || 'No location'
+  }, [rooms])
+
+  // Render lock card
+  const renderLockCard = useCallback((device: any) => (
+    <LockCard key={device.id} name={device.name} location={getRoomName(device)} role={lockRole(device)} connectionLabel={device.is_online === true ? 'Connected' : 'Not connected'} stateLabel={typeof device.is_locked === 'boolean' ? device.is_locked ? 'Locked' : 'Unlocked' : undefined} onPress={() => handleLockPress(device)} />
+  ), [handleLockPress, getRoomName])
+
+  // Show loading state while fetching all critical data
+  if (isLoadingData) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
-        <Typography variant="body">Loading...</Typography>
+      <View style={{ flex: 1, backgroundColor: '#F3F5F8', justifyContent: 'center', alignItems: 'center' }}>
+        <LockLoader label="Loading your locks…" />
       </View>
     )
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <Header
-        user={user || { first_name: undefined, profile_picture: undefined }}
-        homes={homes}
-        activeHomeId={activeHomeId}
-        onHomeSelect={setActiveHomeId}
-      />
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: Spacing.lg,
-          paddingTop: Spacing.lg,
-          paddingBottom: Spacing.md,
-        }}
-      >
-        {steps.map((step, index) => (
-          <StepRow
-            key={step.id}
-            step={step}
-            onAction={onAction}
-            showLine={index < steps.length - 1}
-          />
-        ))}
-
-        <View style={{ height: HOME_SETUP.SPACING.AFTER_LAST_STEP }} />
-
-        <View style={{ alignItems: 'center', marginTop: HOME_SETUP.SPACING.HELP_SECTION }}>
-  <View style={{ flexDirection: "row" }}>
-    <Typography variant="caption" color={'#6B7280'}>
-      Need help?
-    </Typography>
-    <TouchableOpacity
-      onPress={() => {
-        const email = SUPPORT_EMAIL
-        const subject = SUPPORT_SUBJECT
-        const body = SUPPORT_BODY
-        const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-        Linking.openURL(url).catch(err =>
-          console.error("Error opening email app", err)
-        )
-      }}
-    >
-      <Typography variant="caption" color={'#2E7DFF'} style={{ marginLeft: 4 }}>
-        Contact Support
-      </Typography>
-    </TouchableOpacity>
-  </View>
-</View>
-      </ScrollView>
-      <BottomNavigation
-        items={bottomNavItems}
-        activeKey={activeTab}
-        profile_picture={user?.profile_picture}
-        onTabPress={handleTabPress}
-      />
-      
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        onClose={() => setShowProfile(false)}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail, // Real user email from stored data
-          profilePicture: user.profile_picture || null,
-          homesCount: homes.length
-        } : undefined}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
-    </View>
-  )
+  return (<View style={{ flex: 1, backgroundColor: '#F3F5F8' }}>
+ <Header user={user || { first_name: undefined, profile_picture: undefined }} homes={homes} activeHomeId={activeHomeId} onHomeSelect={setActiveHomeId} />
+ <Animated.ScrollView style={{ opacity: contentOpacity }} refreshControl={activeTab === 'profile' || activeTab === 'energy' ? undefined : <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md }} showsVerticalScrollIndicator={false}>
+  {(activeTab === 'home' || activeTab === 'devices') && <View style={{ gap: 12 }}>
+   {homes.length > 1 && <View style={{ alignSelf: 'flex-start', marginBottom: 4 }}><HomeDropdown items={homes} activeId={activeHomeId} onSelect={setActiveHomeId} onAddHome={() => router.push('/(home)/AddHome')} /></View>}
+   {devices.length ? <>
+    <Typography variant="h2" style={{ marginBottom: 8 }}>Your Locks</Typography>
+    {devices.map(renderLockCard)}
+    <AddLockCard onPress={() => router.push('/(devices)/AddDevice2')} />
+   </> : activeTab === 'home' ? steps.map((step, index) => <StepRow key={step.id} step={step} onAction={onAction} showLine={index < steps.length - 1} />) : <>
+    <Typography variant="h2">Your Locks</Typography><Typography variant="body" style={{ marginVertical: 16 }}>No locks yet. Added locks will appear here.</Typography><AddLockCard onPress={() => router.push('/(devices)/AddDevice2')} />
+   </>}
+   {activeTab === 'devices' && <TouchableOpacity onPress={() => router.push('/(HomePage_actions)/MyDevices')} style={{ paddingVertical: 12, alignItems: 'center' }}><Typography variant="caption" color={colors.secondaryText}>Search and filter devices</Typography></TouchableOpacity>}
+  </View>}
+  {activeTab === 'energy' && <ComingSoon title="Energy" icon="flash-outline" />}
+  {activeTab === 'profile' && <ProfileSection name={user?.first_name} email={userEmail} profilePicture={user?.profile_picture} homesCount={homes.length}
+   onAddDevice={() => router.push('/(devices)/AddDevice2')} onMyHomes={() => router.push('/(profile actions)/myHomes')}
+   onInviteFamily={() => toast.info('Inviting family is coming soon.')} onAccountSettings={() => router.push('/(profile actions)/AccountSettings')} onHelpSupport={() => router.push('/(profile actions)/Help&support')} />}
+  <View style={{ alignItems: 'center', marginTop: 'auto', paddingTop: Spacing.xl }}><View style={{ flexDirection: 'row' }}>
+   <Typography variant="caption" color="#6B7280">Need help?</Typography>
+   <TouchableOpacity onPress={() => { const url = 'mailto:' + SUPPORT_EMAIL + '?subject=' + encodeURIComponent(SUPPORT_SUBJECT) + '&body=' + encodeURIComponent(SUPPORT_BODY); Linking.openURL(url).catch(error => console.error('Error opening email app', error)); }}><Typography variant="caption" color="#2E7DFF" style={{ marginLeft: 4 }}>Contact Support</Typography></TouchableOpacity>
+  </View></View>
+ </Animated.ScrollView>
+ <BottomNavigation items={bottomNavItems} activeKey={activeTab} profile_picture={user?.profile_picture} onTabPress={handleTabPress} />
+</View>);
 }
 
 export default HomeScreen

@@ -1,7 +1,10 @@
+import AuthScreen from '@/components/AuthScreen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import BiometricSetupModal from '@/components/BiometricSetupModal';
 import { LOGIN_STRINGS } from '@/constants/Login';
 import { ERROR_MESSAGES } from '@/constants/errors';
 import { AppButton, colors, Spacing, Typography } from '@/design-system';
@@ -9,7 +12,7 @@ import { Grid, Margin, Padding } from '@/design-system/Layout';
 import FilledBackIcon from '@/design-system/icons/filled/BackIcon';
 import FilledHomeIcon from '@/design-system/icons/filled/HomeIcon';
 import TextField from '@/design-system/inputs/TextField';
-import { authAPI, LoginRequest } from '@/services';
+import { authAPI, biometricsService, LoginRequest } from '@/services';
 
 export default function EmailLoginScreen() {
   const router = useRouter();
@@ -18,15 +21,17 @@ export default function EmailLoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showBiometricModal, setShowBiometricModal] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(false);
 
   const canContinue = email.trim() && password.trim();
 
   const handleLogin = async () => {
     if (!canContinue) return;
-    
+
     setIsLoading(true);
     setError('');
-    
+
     try {
       const loginData: LoginRequest = {
         email: email.trim(),
@@ -35,11 +40,43 @@ export default function EmailLoginScreen() {
 
       const response = await authAPI.login(loginData);
 
-      if (response.success) {
-        // Login successful
-        router.push('/(tabs)');
+      // Check if login was successful (check both success flag and message)
+      const isLoginSuccessful = response.success || response.message === 'Login successful' || (response.user && !response.error);
+
+      if (isLoginSuccessful) {
+        // Store user data in AsyncStorage
+        await AsyncStorage.setItem('isAuthenticated', 'true');
+        await AsyncStorage.setItem('loginMethod', 'email');
+        if (response.user) {
+          // Ensure email is included in user data
+          const userData = {
+            ...response.user,
+            email: response.user.email || email.trim(),
+          };
+          await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        } else {
+          // Fallback: store minimal user data with email
+          await AsyncStorage.setItem('userData', JSON.stringify({ email: email.trim() }));
+        }
+
+        // Reset biometric attempts counter on successful login
+        await biometricsService.resetBiometricAttempts();
+
+        // Check if this is the first login and if device supports biometrics
+        const isFirstLogin = await biometricsService.isFirstLogin();
+        const canSetupBiometrics = await biometricsService.canSetupBiometrics();
+
+        if (isFirstLogin && canSetupBiometrics) {
+          // Show biometric setup modal instead of navigating immediately
+          setPendingNavigation(true);
+          setShowBiometricModal(true);
+        } else {
+          // Navigate to home/main app screen
+          router.replace('/(app)/home');
+        }
       } else {
         // Login failed - handle specific error cases
+        console.log('Login failed:', response);
         if (response.email_verification_required) {
           setError(ERROR_MESSAGES.EMAIL_NOT_VERIFIED);
         } else {
@@ -59,8 +96,30 @@ export default function EmailLoginScreen() {
     }
   };
 
-  return (
-    <View style={styles.container}>
+  // Biometric setup handlers
+  const handleBiometricEnable = () => {
+    setShowBiometricModal(false);
+    Alert.alert(
+      'Biometrics Enabled',
+      'You can now use biometric authentication to login.',
+      [{ text: 'OK', onPress: () => router.replace('/(app)/home') }]
+    );
+  };
+
+  const handleBiometricSkip = () => {
+    setShowBiometricModal(false);
+    router.replace('/(app)/home');
+  };
+
+  const handleBiometricClose = () => {
+    setShowBiometricModal(false);
+    if (pendingNavigation) {
+      router.replace('/(app)/home');
+    }
+  };
+
+  return ((
+    <AuthScreen><View style={styles.container}>
       {/* Header */}
       <View style={styles.headerRow}>
         <AppButton
@@ -133,37 +192,45 @@ export default function EmailLoginScreen() {
       </View>
 
       {/* Forgot password */}
-      <TouchableOpacity onPress={() => {
-        // TODO: navigate to forgot password screen
-        console.log('Forgot password pressed');
-      }}>
+      <TouchableOpacity onPress={() => router.push('./resetpassword')}>
         <View style={styles.forgotPassword}>
           <Typography variant="caption" color={colors.secondaryText}>
             {LOGIN_STRINGS.emailLogin.actions.forgotPassword}
           </Typography>
         </View>
       </TouchableOpacity>
-    </View>
-  );
+    </View><BiometricSetupModal
+        visible={showBiometricModal}
+        onClose={handleBiometricClose}
+        onEnable={handleBiometricEnable}
+        onSkip={handleBiometricSkip}
+        phoneNumber={email}
+      /></AuthScreen>
+  ));
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    paddingBottom: Spacing.lg,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
     width: '100%',
   },
   heroDot: {
@@ -176,7 +243,8 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   title: {
     textAlign: 'center',

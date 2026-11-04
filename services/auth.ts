@@ -25,9 +25,16 @@ export interface AuthResponse {
     email?: string;
     phone_number?: string;
     is_verified: boolean;
+    first_name?: string;
+    last_name?: string;
+    profile_picture?: string | null;
+    user_type?: string;
+    is_approved?: boolean;
+    email_verified?: boolean;
   };
   error?: string;
   email_verification_required?: boolean;
+  csrf_token?: string;
 }
 
 // Helper function to store user data (optional for caching)
@@ -102,10 +109,11 @@ export const authAPI = {
       
       // If Django returns a simple success response without 'success' field
       if (response.status === 200 && !data.hasOwnProperty('success')) {
-        const authResponse = {
+        const authResponse: AuthResponse = {
           success: true,
           message: data.message || SUCCESS_MESSAGES.OTP_VERIFIED,
-          user: data.user || undefined
+          user: data.user || undefined,
+          csrf_token: data.csrf_token || undefined,
         };
         
         // Django session is automatically created and managed
