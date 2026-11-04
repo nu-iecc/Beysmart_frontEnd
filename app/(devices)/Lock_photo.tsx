@@ -1,3 +1,4 @@
+import SetupScreen from '@/components/SetupScreen';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from "react";
@@ -45,13 +46,13 @@ const Lock_photo = () => {
 
       if (!result.canceled && result.assets[0]) {
         const selectedAsset = result.assets[0];
-        
+
         // Validate file size (max 5MB)
         if (selectedAsset.fileSize && selectedAsset.fileSize > 5 * 1024 * 1024) {
           Alert.alert('File Too Large', 'Please select an image smaller than 5MB.');
           return;
         }
-        
+
         setSelectedImage(selectedAsset.uri);
       }
     } catch (error) {
@@ -81,11 +82,11 @@ const Lock_photo = () => {
     try {
       // Create FormData for the image upload
       const formData = new FormData();
-      
+
       // Get the file extension and determine MIME type
       const uriParts = selectedImage.split('.');
       const fileExtension = uriParts[uriParts.length - 1].toLowerCase();
-      
+
       // Map common extensions to MIME types
       const mimeTypeMap: { [key: string]: string } = {
         'jpg': 'image/jpeg',
@@ -94,9 +95,9 @@ const Lock_photo = () => {
         'gif': 'image/gif',
         'webp': 'image/webp',
       };
-      
+
       const mimeType = mimeTypeMap[fileExtension] || 'image/jpeg';
-      
+
       // Append the image file
       formData.append('photo', {
         uri: selectedImage,
@@ -107,15 +108,15 @@ const Lock_photo = () => {
       console.log('📤 Uploading to endpoint:', `home/devices/${deviceId}/upload-photo/`);
       console.log('Full URL will be:', `${BASE_URL}home/devices/${deviceId}/upload-photo/`);
       console.log('FormData prepared with photo');
-   
+
       const response = await apiClient.patch(`home/devices/${deviceId}/upload-photo/`, formData, {
         headers: {
           'Accept': 'application/json',
         },
       });
-      
+
       console.log('✅ Upload successful:', response.data);
-      
+
       // Navigate to the next screen (AddDevice9)
       Alert.alert('Success', 'Device photo uploaded successfully!', [
         {
@@ -135,7 +136,7 @@ const Lock_photo = () => {
           }
         }
       ]);
-      
+
     } catch (error: any) {
       console.error('❌ Device photo upload failed:', error);
       console.error('Error details:', {
@@ -144,9 +145,9 @@ const Lock_photo = () => {
         status: error.response?.status,
         config: error.config?.url
       });
-      
+
       let errorMessage = 'Failed to upload device photo. Please try again.';
-      
+
       if (error.response?.data) {
         const errorData = error.response.data;
         if (typeof errorData === 'string') {
@@ -161,7 +162,7 @@ const Lock_photo = () => {
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       Alert.alert('Upload Failed', errorMessage);
     } finally {
       setIsUploading(false);
@@ -200,144 +201,18 @@ const Lock_photo = () => {
 
   const isDisabled = !selectedImage || isUploading;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* Header (match Device screens) */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.push('/(devices)/AddDevice8' as never);
-              }
-            }}
-            accessibilityLabel="Go back"
-            accessibilityHint="Return to previous screen"
-          >
-            <BackArrow width={24} height={24} color={colors.surface} />
-          </TouchableOpacity>
-          <Typography variant="h3" color={colors.surface} style={styles.headerTitle}>
-            {DEVICE_DETAILS_SETUP.NAVIGATION.TITLE}
-          </Typography>
-        </View>
-        <Typography variant="caption" color={colors.surface} style={styles.stepIndicator}>
-          {DEVICE_DETAILS_SETUP.NAVIGATION.STEP_INDICATOR}
-        </Typography>
-      </View>
-
-      {/* Intro content */}
-      <View style={{ ...Padding.screenHorizontal, marginTop: Spacing.lg }}>
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
-          <View
-            style={{
-              width: 96,
-              height: 96,
-              backgroundColor: colors.primary.base,
-              borderRadius: 48,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: Spacing.md,
-            }}
-          >
-            <Beylock width={32} height={32} color={colors.text} />
-          </View>
-          
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
-            Personalize Your Device
-          </Typography>
-          
-          <Typography variant="body" color={colors.secondaryText} style={{ textAlign: 'center' }}>
-            Add a photo to quickly identify this device in your list.
-          </Typography>
-        </View>
-      </View>
-
-      {/* Photo Upload Area */}
-      <View style={{ ...Padding.screenHorizontal, marginBottom: Spacing.xl }}>
-        <TouchableOpacity
-          style={{
-            borderWidth: 2,
-            borderColor: colors.border,
-            borderStyle: 'dashed',
-            borderRadius: 12,
-            padding: Spacing.xl,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.surface,
-            minHeight: 120,
-          }}
-          onPress={pickImage}
-        >
-          {selectedImage ? (
-            <View style={{ alignItems: 'center' }}>
-              <Image
-                source={{ uri: selectedImage }}
-                style={{
-                  width: 80,
-                  height: 80,
-                  borderRadius: 40,
-                  marginBottom: Spacing.sm,
-                }}
-              />
-              <Typography variant="body" color={colors.secondaryText}>
-                Tap to change photo
-              </Typography>
-            </View>
-          ) : (
-            <View style={{ alignItems: 'center' }}>
-              <ImageIcon width={48} height={48} color={colors.secondaryText} />
-              <Typography variant="body" color={colors.secondaryText} style={{ marginTop: Spacing.sm }}>
-                Add Photo
-              </Typography>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Action Buttons */}
-      <View style={{ ...Padding.screenHorizontal, marginTop: 'auto', paddingBottom: Spacing.lg }}>
-        <AppButton
-          variant={isDisabled ? 'primaryDisabled' : 'primaryLarge'}
-          title={isUploading ? 'Uploading...' : 'Next'}
-          onPress={handleLockPhoto}
-          disabled={isDisabled}
-        />
-
-        <TouchableOpacity
-          style={{
-            alignItems: 'center',
-            marginTop: Spacing.lg,
-            paddingVertical: Spacing.sm,
-          }}
-          onPress={handleSkip}
-        >
-          <Typography variant="body" color={colors.secondary.base}>
-            Skip This Step
-          </Typography>
-        </TouchableOpacity>
-
-        {/* Security Indicator */}
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          marginTop: Spacing.xl 
-        }}>
-          <LockIcon width={16} height={16} color={colors.secondaryText} />
-          <Typography 
-            variant="caption" 
-            color={colors.secondaryText}
-            style={{ marginLeft: 4 }}
-          >
-            Your data is securely encrypted
-          </Typography>
-        </View>
-      </View>
-    </View>
-  );
+  return (<SetupScreen step={5} title="Add a lock photo" subtitle="A photo makes your lock easy to recognise." busy={isUploading}
+    footer={<View style={{ gap: 12 }}>
+      <AppButton variant="primaryLarge" title={isUploading ? 'Uploading…' : 'Save photo'} onPress={handleLockPhoto} disabled={isDisabled} />
+      <AppButton variant="secondaryMedium" title="Skip for now" onPress={handleSkip} disabled={isUploading} />
+    </View>}>
+    <TouchableOpacity onPress={pickImage} disabled={isUploading} accessibilityRole="button" accessibilityLabel="Choose lock photo"
+      style={{ borderRadius: 24, minHeight: 280, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 16 }}>
+      {selectedImage ? <Image source={{ uri: selectedImage }} style={{ width: '100%', height: 240, borderRadius: 20 }} resizeMode="cover" /> : <ImageIcon width={64} height={64} color={colors.disabled} />}
+      <Typography variant="h3">{selectedImage ? 'Change photo' : 'Choose a photo'}</Typography>
+      <Typography variant="caption" color={colors.disabled}>{deviceName}</Typography>
+    </TouchableOpacity>
+  </SetupScreen>);
 };
 
 export default Lock_photo;

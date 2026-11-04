@@ -1,3 +1,6 @@
+import { SetupMoment } from '@/components/SetupScreen';
+import LockLoader from '@/components/LockLoader';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
@@ -9,7 +12,7 @@ import { CalibrationProcessState, smartLockService } from '../../src/ble';
 
 const AddDevice15 = () => {
   const params = useLocalSearchParams();
-  
+
   const [isWaiting, setIsWaiting] = useState(true);
   const [calibrationResult, setCalibrationResult] = useState<CalibrationProcessState | null>(null);
 
@@ -20,15 +23,15 @@ const AddDevice15 = () => {
       try {
         console.log('📖 Step 3: Reading calibration state before waiting...');
         console.log('ℹ️ Door sensor calibration skipped');
-        
+
         // Read from 0xDD04 first to kick off the calibration process
         const initialResult = await smartLockService.readCalibrationState();
         console.log('📊 Initial calibration state:', initialResult);
-        
+
         // Now subscribe and wait for the final result
         console.log('⏳ Subscribing and waiting for lock calibration to complete...');
         const result = await smartLockService.waitForCalibrationResult(60000);
-        
+
         console.log('📊 Final calibration result:', result);
         setCalibrationResult(result);
         setIsWaiting(false);
@@ -37,7 +40,7 @@ const AddDevice15 = () => {
           // Don't clear calibration subscriptions - they're harmless and clearing them
           // causes native crashes when the subscription tries to be cancelled later.
           // The 0xDD04 characteristic won't send notifications after calibration anyway.
-          
+
           // Success! Navigate to success screen after a brief delay
           setTimeout(() => {
             router.push({
@@ -103,66 +106,16 @@ const AddDevice15 = () => {
 
   // Waiting state
   if (isWaiting) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary.base} />
-        <Typography variant="h2" style={styles.waitingTitle}>
-          Calibrating Your Lock
-        </Typography>
-        <Typography variant="body" color={colors.secondaryText} style={styles.waitingMessage}>
-          Please wait while the device completes the calibration process...
-        </Typography>
-      </View>
-    );
+    return (<SetupMoment title="Finishing calibration" subtitle="Keep your lock nearby while it completes calibration." busy showBack={false} art={<LockLoader size={64} tone="lime" />} actions={<View />} />);
   }
 
   // Failure state
   if (calibrationResult !== CalibrationProcessState.SUCCESS) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.errorIcon}>
-          <Typography variant="h1" style={styles.errorIconText}>⚠️</Typography>
-        </View>
-        
-        <Typography variant="h1" style={styles.errorTitle}>
-          Calibration Failed
-        </Typography>
-        
-        <Typography variant="body" color={colors.secondaryText} style={styles.errorMessage}>
-          {getFailureMessage(calibrationResult!)}
-        </Typography>
-
-        <View style={styles.buttonContainer}>
-          <AppButton
-            variant="primaryLarge"
-            title="Retry Calibration"
-            onPress={handleRetry}
-            accessibilityLabel="Retry calibration"
-            accessibilityHint="Tap to restart the calibration process"
-          />
-          
-          <View style={{ height: Spacing.md }} />
-          
-          <AppButton
-            variant="secondaryLarge"
-            title="Cancel"
-            onPress={handleCancel}
-            accessibilityLabel="Cancel calibration"
-            accessibilityHint="Tap to cancel and return to home"
-          />
-        </View>
-      </View>
-    );
+    return (<SetupMoment title="Calibration failed" subtitle={getFailureMessage(calibrationResult!)} art={<Ionicons name="alert-circle-outline" size={80} color={colors.primary.base} />} actions={<><AppButton variant="primaryLarge" title="Retry calibration" onPress={handleRetry} /><AppButton variant="secondaryLarge" title="Cancel" onPress={handleCancel} /></>} />);
   }
 
   // Success state (briefly shown before navigation)
-  return (
-    <View style={styles.container}>
-      <Typography variant="h1" style={styles.successTitle}>
-        ✅ Calibration Complete!
-      </Typography>
-    </View>
-  );
+  return (<SetupMoment title="Calibration complete" subtitle="Your lock is ready." art={<Ionicons name="checkmark-circle" size={80} color={colors.primary.base} />} actions={<View />} showBack={false} />);
 };
 
 const styles = {

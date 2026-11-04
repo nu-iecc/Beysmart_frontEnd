@@ -3,7 +3,7 @@ import { PlusIcon } from '@/design-system/icons/filled';
 import { Typography } from '@/design-system/typography/typography';
 import { scale } from '@/utils/responsive';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
     FlatList,
     Modal,
@@ -37,7 +37,6 @@ export const HomeDropdown: React.FC<HomeDropdownProps> = ({
   style,
 }) => {
   const [visible, setVisible] = useState(false);
-  const buttonRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
 
   const handleSelect = (id: number) => {
     setVisible(false);
@@ -71,7 +70,6 @@ export const HomeDropdown: React.FC<HomeDropdownProps> = ({
   return (
     <>
       <TouchableOpacity
-        ref={buttonRef}
         style={[styles.button, style]}
         onPress={() => setVisible(true)}
         activeOpacity={0.8}
@@ -88,8 +86,8 @@ export const HomeDropdown: React.FC<HomeDropdownProps> = ({
         <MaterialIcons
           name="keyboard-arrow-down"
           size={scale(28)}
-          color={colors.primary.base}
-          style={{ marginLeft: scale(4), fontWeight: 'bold' }}
+          color={colors.text}
+          style={{ marginLeft: scale(4) }}
         />
       </TouchableOpacity>
       <Modal
@@ -133,10 +131,10 @@ const styles = StyleSheet.create({
   button: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: scale(8),
-    borderWidth: 2,
-    borderColor: '#C6F94E',
+    backgroundColor: colors.primary.base,
+    borderRadius: scale(14),
+    borderWidth: 1,
+    borderColor: colors.primary.darkest,
     paddingHorizontal: scale(16),
     paddingVertical: scale(10),
     minWidth: scale(140),
@@ -179,13 +177,6 @@ const styles = StyleSheet.create({
   },
   selectedItem: {
     backgroundColor: '#222B3A',
-  },
-  activeDot: {
-    width: scale(8),
-    height: scale(8),
-    borderRadius: scale(4),
-    backgroundColor: colors.primary.base,
-    marginLeft: 8,
   },
   divider: {
     height: 1,

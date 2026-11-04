@@ -9,7 +9,7 @@ import { scale, scaleFont } from '@/utils/responsive';
 export default function WelcomeScreen() {
   const router = useRouter();
 
-  return (
+  return ((
     <ImageBackground
       source={require('../../assets/images/Vector.png')}
       resizeMode="cover"
@@ -40,7 +40,7 @@ export default function WelcomeScreen() {
         </View>
       </View>
     </ImageBackground>
-  );
+  ));
 }
 
 const styles = StyleSheet.create({
@@ -51,17 +51,16 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'space-between',
-    padding: scale(Spacing.lg),
+    padding: Spacing.lg,
   },
   brandBlock: {
-    marginTop: scale(Spacing.xl),
+    marginTop: Spacing.xl,
   },
   brandTitle: {
     fontFamily: 'Qebram',
-    fontSize: scaleFont(40), // Responsive font size for brand title
   },
   actions: {
-    marginBottom: scale(Spacing.xl),
+    marginBottom: Spacing.xl,
   },
 });
 

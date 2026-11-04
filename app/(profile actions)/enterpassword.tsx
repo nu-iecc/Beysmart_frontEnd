@@ -36,21 +36,21 @@ const EnterPassword = () => {
     try {
       // Ensure CSRF is hydrated for session-protected flow
       try { await apiClient.get('auth/csrf-token/'); } catch {}
-      
+
       // Handle delete account flow - call API to generate OTP
       const requestData = {
         password,
         confirm_password: confirmPassword,
       };
-      
+
       const response = await apiClient.post('auth/request-account-deletion/', requestData);
-      
+
       // Navigate to verify OTP screen for delete account flow
       router.push({
         pathname: '/(auth)/verify-otp' as never,
-        params: { 
-          email: userEmail, 
-          phone_number: userPhone, 
+        params: {
+          email: userEmail,
+          phone_number: userPhone,
           flow: 'delete-account'
         }
       });
@@ -77,10 +77,10 @@ const EnterPassword = () => {
       primaryTitle: ACC.DELETE_ACCOUNT.BUTTON_TITLE,
     }
   } as AuthScreenCopy;
-  
+
   const visuals = AUTH_VISUALS.completeRegistration;
 
-  return (
+  return ((
     <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
       {/* Header (fixed) */}
       <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
@@ -104,10 +104,10 @@ const EnterPassword = () => {
         <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
           <View
             style={{
-              width: 96,
-              height: 96,
+              width: 72,
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -115,11 +115,11 @@ const EnterPassword = () => {
           >
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
-          
+
           <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
             {copy.title}
           </Typography>
-          
+
           <Typography variant="body" color={AUTH_THEME.secondaryText}>
             {copy.subtitle}
           </Typography>
@@ -156,16 +156,16 @@ const EnterPassword = () => {
         </View>
 
         {/* Password Requirements */}
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
-          marginTop: Spacing.xs 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginTop: Spacing.xs
         }}>
           {visuals.securityIcon && (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           )}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -183,17 +183,17 @@ const EnterPassword = () => {
           disabled={isDisabled}
         />
 
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           justifyContent: 'center',
-          marginTop: Spacing.lg 
+          marginTop: Spacing.lg
         }}>
           {visuals.securityIcon && (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           )}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -202,7 +202,7 @@ const EnterPassword = () => {
         </View>
       </View>
     </View>
-  );
+  ));
 };
 
 export default EnterPassword;

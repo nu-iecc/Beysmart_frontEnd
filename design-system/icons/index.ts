@@ -9,7 +9,8 @@ export * as FilledIcons from './filled';
 export {
     AlertIcon, Door, EnergyIcon,
     HomeIcon,
-    LightIcon, LivingIcon, PlusIcon, Robot, SettingsIcon, UserIcon
+    LightIcon, LivingIcon, PlusIcon, Robot, SettingsIcon, UserIcon,
+    CalendarIcon, SaveIcon, HeartIcon, StarIcon, TimeIcon
 } from './filled';
 
 export {

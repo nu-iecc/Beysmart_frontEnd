@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -141,12 +142,12 @@ const AddHome: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error creating home:', error);
-      
-      const errorMessage = error.response?.data?.error || 
-                          error.response?.data?.detail || 
-                          error.message || 
+
+      const errorMessage = error.response?.data?.error ||
+                          error.response?.data?.detail ||
+                          error.message ||
                           'Failed to create home. Please try again.';
-      
+
       Alert.alert(
         'Error',
         errorMessage,
@@ -162,7 +163,7 @@ const AddHome: React.FC = () => {
     router.back();
   };
 
-  return (
+  return ((
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -244,7 +245,7 @@ const AddHome: React.FC = () => {
       </ScrollView>
 
       {/* Bottom Navigation */}
-      <BottomNavigation 
+      <BottomNavigation
         items={[
           { key: 'home', label: 'Home', icon: null },
           { key: 'devices', label: 'Devices', icon: null },
@@ -258,48 +259,17 @@ const AddHome: React.FC = () => {
           if (key === 'home') {
             router.push('/(app)/home');
           } else if (key === 'devices') {
-            router.push('/(HomePage_actions)/MyDevices' as any);
+            router.push('/(app)/home');
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            setShowProfile(true);
+            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
           }
         }}
       />
 
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: 0 // We don't have homes data in this context
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
     </View>
-  );
+  ));
 };
 
 const styles = {
@@ -331,7 +301,7 @@ const styles = {
     fontWeight: '600' as const,
   },
   stepIndicator: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'right' as const,
   },
   content: {

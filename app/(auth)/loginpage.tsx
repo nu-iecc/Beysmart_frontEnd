@@ -1,3 +1,4 @@
+import AuthScreen from '@/components/AuthScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -107,8 +108,9 @@ export default function LoginMethodScreen() {
     [biometricTypeName]
   );
 
-  return (
-    <View style={styles.container}>
+  return ((
+    <AuthScreen><View style={styles.container}>
+      {/* Back Button */}
       <View style={styles.header}>
         <AppButton
           variant="iconOnlyMedium"
@@ -121,14 +123,11 @@ export default function LoginMethodScreen() {
         <Typography variant="h1" color={colors.text} style={styles.title}>
           {LOGIN_STRINGS.methodSelect.title}
         </Typography>
-
         <Typography variant="body" color={colors.secondaryText} style={styles.subtitle}>
           {LOGIN_STRINGS.methodSelect.subtitle}
         </Typography>
 
-        <View style={styles.actions}>
-          {/* BIOMETRIC SECTION */}
-          {showBiometricOption && (
+        <View style={styles.actions}>{showBiometricOption && (
             <>
               {/* ONE USER */}
               {biometricUsers.length === 1 && (
@@ -169,56 +168,54 @@ export default function LoginMethodScreen() {
               <View style={{ height: Spacing.md }} />
 
               {/* Divider */}
-              <View style={styles.dividerContainer}>
-                <View style={styles.dividerLine} />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
                 <Typography variant="caption" color={colors.secondaryText}>
                   or use another method
                 </Typography>
-                <View style={styles.dividerLine} />
+                <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
               </View>
 
               <View style={{ height: Spacing.md }} />
             </>
           )}
-
-          {/* EMAIL */}
           <AppButton
-            variant={showBiometricOption ? 'secondaryLarge' : 'primaryLarge'}
+            variant="primaryLarge"
             title={LOGIN_STRINGS.methodSelect.actions.loginWithEmail}
             icon={<MailIcon />}
-            onPress={() => router.push('./emaillogin')}
+            onPress={() => { router.push('./emaillogin') }}
           />
-
           <View style={{ height: Spacing.md }} />
-
-          {/* PHONE */}
           <AppButton
-            variant={showBiometricOption ? 'secondaryLarge' : 'primaryLarge'}
+            variant="primaryLarge"
             title={LOGIN_STRINGS.methodSelect.actions.loginWithPhone}
             icon={<Phone />}
-            onPress={() => router.push('./phonelogin')}
+            onPress={() => { router.push('./phonelogin') }}
           />
         </View>
       </View>
 
       <View style={styles.footer}>
-        <Typography variant="caption" color={colors.secondaryText}>
-          {LOGIN_STRINGS.methodSelect.accessibility.securityNote}
+        <Typography variant="caption" color={colors.secondaryText} style={styles.securityNote}>
+           {LOGIN_STRINGS.methodSelect.accessibility.securityNote}
         </Typography>
       </View>
-    </View>
-  );
+    </View></AuthScreen>
+  ));
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    padding: scale(Spacing.lg),
+    padding: Spacing.lg,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   header: {
-    marginTop: scale(Spacing.xl),
-    marginBottom: scale(Spacing.lg),
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   content: {
     flex: 1,
@@ -227,29 +224,21 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    marginBottom: scale(Spacing.sm),
-    fontSize: scaleFont(32),
+    marginBottom: Spacing.sm,
   },
   subtitle: {
     textAlign: 'center',
-    marginBottom: scale(Spacing.xl),
-    fontSize: scaleFont(16),
+    marginBottom: Spacing.xl,
   },
   actions: {
     width: '100%',
-    maxWidth: scale(300),
+    maxWidth: 300,
   },
   footer: {
     alignItems: 'center',
-    marginBottom: scale(Spacing.lg),
+    marginBottom: Spacing.lg,
   },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
+  securityNote: {
+    textAlign: 'center',
   },
 });

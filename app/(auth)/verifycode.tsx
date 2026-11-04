@@ -44,12 +44,12 @@ export default function VerifyCodeScreen() {
     const copy = [...digits];
     copy[index] = next;
     setDigits(copy);
-    
+
     // Auto-continue when all 4 digits are filled
     if (copy.every(digit => digit !== '') && !isLoading) {
       handleVerifyOTP(copy.join(''));
     }
-    
+
     if (next && index < OTP_LENGTH - 1) {
       inputsRef.current[index + 1]?.focus();
     }
@@ -58,7 +58,7 @@ export default function VerifyCodeScreen() {
   const handleVerifyOTP = async (otpCode: string) => {
     setIsLoading(true);
     setError('');
-    
+
     try {
       const otpData: VerifyOtpRequest = {
         phone_number: params.phone || '',
@@ -84,21 +84,21 @@ export default function VerifyCodeScreen() {
           await AsyncStorage.setItem('userData', JSON.stringify({ phone_number: params.phone }));
           await AsyncStorage.setItem('loginMethod', 'phone');
         }
-        
+
         // Store CSRF token if provided
         if (response.csrf_token) {
           await AsyncStorage.setItem('csrftoken', response.csrf_token);
         }
-        
+
         // Reset biometric attempts counter on successful OTP login
         await biometricsService.resetBiometricAttempts();
-        
+
         // Check if this is the first login and if device supports biometrics
         const isFirstLogin = await biometricsService.isFirstLogin();
         const canSetupBiometrics = await biometricsService.canSetupBiometrics();
-        
+
         console.log('🔐 Biometric setup check in verifycode:', { isFirstLogin, canSetupBiometrics });
-        
+
         if (isFirstLogin && canSetupBiometrics) {
           console.log('🔐 Showing biometric setup modal');
           // Show biometric setup modal instead of navigating immediately
@@ -159,7 +159,7 @@ export default function VerifyCodeScreen() {
     setTimer(COUNTDOWN_SECONDS);
   };
 
-  return (
+  return ((
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <AppButton
@@ -242,17 +242,14 @@ export default function VerifyCodeScreen() {
           🔒 {LOGIN_STRINGS.phoneLogin.accessibility.securityNote}
         </Typography>
       </View>
-
-      {/* Biometric Setup Modal */}
-      <BiometricSetupModal
+    <BiometricSetupModal
         visible={showBiometricModal}
         onClose={handleBiometricClose}
         onEnable={handleBiometricEnable}
         onSkip={handleBiometricSkip}
         phoneNumber={params.phone || ''}
-      />
-    </View>
-  );
+      /></View>
+  ));
 }
 
 const BOX_SIZE = 56;
@@ -263,17 +260,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
     width: '100%',
   },
   heroDot: {
@@ -286,7 +287,8 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   title: {
     textAlign: 'center',
@@ -298,17 +300,18 @@ const styles = StyleSheet.create({
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.lg,
   },
   otpBox: {
     width: BOX_SIZE,
     height: BOX_SIZE,
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     textAlign: 'center',
-    fontSize: 20,
+    fontSize: 22,
+    fontWeight: '600',
     color: colors.text,
   },
   footer: {

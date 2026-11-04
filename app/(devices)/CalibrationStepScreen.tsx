@@ -1,3 +1,14 @@
+const STEP_HEADLINES = [
+  'Turn fully to unlock',
+  'Turn fully to lock',
+  'Find the unlock point',
+  'Find the lock point',
+  'Leave the door ajar',
+  'Close the door',
+];
+import SetupScreen from '@/components/SetupScreen';
+import { setupStyles } from '@/components/SetupScreen';
+import { StyleSheet } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useCallback } from 'react';
@@ -45,7 +56,7 @@ const CalibrationStepScreen: React.FC<CalibrationStepScreenProps> = ({
         player.currentTime = 0;
         player.play();
       }
-      
+
       return () => {
         // Pause video when screen loses focus
         if (player) {
@@ -59,136 +70,44 @@ const CalibrationStepScreen: React.FC<CalibrationStepScreenProps> = ({
     router.back();
   };
 
-  return (
-    <View style={styles.container}>
-      {/* Back Button */}
-      {showBackButton && (
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <BackArrow />
-        </TouchableOpacity>
-      )}
-
-      {/* Step Indicator */}
-      <View style={styles.stepIndicatorContainer}>
-        <Typography variant="body" color={LOCK_CALIBRATION_STEPS.COLORS.STEP_INDICATOR_TEXT} style={styles.stepIndicator}>
-          {LOCK_CALIBRATION_STEPS.NAVIGATION.STEP_INDICATOR(currentStep, totalSteps)}
-        </Typography>
+  return ((
+    <SetupScreen
+      step={6} showBack={showBackButton}
+      stepDetail={`${currentStep} of ${totalSteps}`}
+      title={STEP_HEADLINES[currentStep - 1] ?? title}
+      footer={
+        <AppButton
+          variant={LOCK_CALIBRATION_STEPS.ACTION.VARIANT}
+          title={currentStep === totalSteps ? 'Finish' : LOCK_CALIBRATION_STEPS.NAVIGATION.BUTTON_TEXT}
+          onPress={onNext}
+          accessibilityLabel={LOCK_CALIBRATION_STEPS.ACTION.NEXT_BUTTON}
+          accessibilityHint={LOCK_CALIBRATION_STEPS.ACTION.NEXT_BUTTON}
+        />
+      }
+    >
+      <View style={styles.videoCard}>
+        <VideoView player={player} style={styles.video} contentFit="contain" nativeControls={false} />
       </View>
 
-      {/* Content Container */}
-      <View style={styles.contentContainer}>
-        {/* Icon */}
-        <View style={styles.iconContainer}>
-          <ScaleIcon 
-            width={LOCK_CALIBRATION_STEPS.DIMENSIONS.ICON_SIZE}
-            height={LOCK_CALIBRATION_STEPS.DIMENSIONS.ICON_SIZE}
-            color={colors.text}
-          />
+      <View style={setupStyles.card}>
+        <View style={styles.dots}>
+          {Array.from({ length: totalSteps }, (_, i) => (
+            <View key={i} style={[styles.dot, i < currentStep && styles.dotDone, i === currentStep - 1 && styles.dotCurrent]} />
+          ))}
         </View>
-
-        {/* Title */}
-        <Typography variant="h2" color={LOCK_CALIBRATION_STEPS.COLORS.TITLE_TEXT} style={styles.title}>
-          {title}
-        </Typography>
-
-        {/* Video Animation */}
-        <View style={styles.gifContainer}>
-          <VideoView
-            player={player}
-            style={styles.gif}
-            contentFit="contain"
-            nativeControls={false}
-          />
-        </View>
-
-        {/* Description */}
-        <Typography variant="body" color={LOCK_CALIBRATION_STEPS.COLORS.DESCRIPTION_TEXT} style={styles.description}>
-          {description}
-        </Typography>
-
-        {/* Next Button */}
-        <View style={styles.buttonContainer}>
-          <AppButton
-            variant={LOCK_CALIBRATION_STEPS.ACTION.VARIANT}
-            title={LOCK_CALIBRATION_STEPS.NAVIGATION.BUTTON_TEXT}
-            onPress={onNext}
-            accessibilityLabel={LOCK_CALIBRATION_STEPS.ACTION.NEXT_BUTTON}
-            accessibilityHint={LOCK_CALIBRATION_STEPS.ACTION.NEXT_BUTTON}
-          />
-        </View>
+        <Typography variant="body" color={colors.secondaryText}>{description.trim()}</Typography>
       </View>
-    </View>
-  );
+    </SetupScreen>
+  ));
 };
 
-const styles = {
-  container: {
-    flex: 1,
-    backgroundColor: LOCK_CALIBRATION_STEPS.COLORS.BACKGROUND,
-  },
-  backButton: {
-    position: 'absolute' as const,
-    top: Spacing.xxl + 10,
-    left: Spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: Spacing.sm,
-    zIndex: 10,
-  },
-  stepIndicatorContainer: {
-    position: 'absolute' as const,
-    top: Spacing.xxl + 20,
-    right: Spacing.md,
-    zIndex: 10,
-  },
-  stepIndicator: {
-    fontSize: 14,
-    fontWeight: '400' as const,
-  },
-  contentContainer: {
-    flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xxl + 50,
-  },
-  iconContainer: {
-    width: LOCK_CALIBRATION_STEPS.DIMENSIONS.ICON_SIZE + Spacing.lg,
-    height: LOCK_CALIBRATION_STEPS.DIMENSIONS.ICON_SIZE + Spacing.lg,
-    borderRadius: (LOCK_CALIBRATION_STEPS.DIMENSIONS.ICON_SIZE + Spacing.lg) / 2,
-    backgroundColor: LOCK_CALIBRATION_STEPS.COLORS.ICON_BACKGROUND,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-    marginBottom: Spacing.sm,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600' as const,
-    textAlign: 'center' as const,
-    marginBottom: Spacing.xs-70,
-  },
-  gifContainer: {
-    width: LOCK_CALIBRATION_STEPS.DIMENSIONS.GIF_WIDTH,
-    height: LOCK_CALIBRATION_STEPS.DIMENSIONS.GIF_HEIGHT,
-    marginBottom: Spacing.xs-70,
-  },
-  gif: {
-    width: '100%' as any,
-    height: '100%' as any,
-  },
-  description: {
-    fontSize: 14,
-    fontWeight: '400' as const,
-    textAlign: 'left' as const,
-    lineHeight: 20,
-    marginBottom: Spacing.lg,
-    paddingHorizontal: Spacing.sm,
-  },
-  buttonContainer: {
-    width: '100%' as any,
-    alignItems: 'center' as const,
-    marginTop: -Spacing.sm,
-  },
-};
+const styles = StyleSheet.create({
+  videoCard: { borderRadius: 24, overflow: 'hidden', backgroundColor: colors.surface, height: 280 },
+  video: { width: '100%', height: '100%' },
+  dots: { flexDirection: 'row', gap: 6 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.inactivestep },
+  dotDone: { backgroundColor: colors.navBarBackground },
+  dotCurrent: { width: 24, backgroundColor: colors.primary.darker },
+});
 
 export default CalibrationStepScreen;

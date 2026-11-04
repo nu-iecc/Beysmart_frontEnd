@@ -1,3 +1,5 @@
+import LockCard, { lockRole } from '@/components/LockCard';
+import PageHeader from '@/components/PageHeader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -6,7 +8,7 @@ import ProfilePage from '../(profile actions)/Profile';
 import { getMediaUrl } from '../../constants/api';
 import { colors } from '../../design-system/colors/colors';
 import { BackArrow, Lock } from '../../design-system/icons';
-import { Beylock, PlusIcon } from '../../design-system/icons/filled';
+import { PlusIcon } from '../../design-system/icons/filled';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
 import { MyDevicesConstants } from '../../design-system/Profile actions/Constants';
@@ -16,6 +18,9 @@ import { scale, scaleFont } from '../../utils/responsive';
 
 // Types
 interface Device {
+  role?: string;
+  access_role?: string;
+  is_owner?: boolean;
   id: number;
   name: string;
   device_type: string;
@@ -147,6 +152,7 @@ const MyDevices: React.FC = () => {
       pathname: '/(Lock/Unlock)/LockControlScreen',
       params: {
         deviceId: device.id.toString(),
+        role: lockRole(device),
         deviceName: device.name,
         homeName: homeName,
       },
@@ -158,22 +164,10 @@ const MyDevices: React.FC = () => {
     router.push('/(devices)/AddDevice2' as never);
   };
 
-  // Get device icon based on type
-  const getDeviceIcon = (deviceType: string) => {
-    switch (deviceType.toLowerCase()) {
-      case 'beylock':
-      case 'smart_lock':
-      case 'lock':
-        return <Beylock width={28} height={28} color={colors.primary.darker} />;
-      default:
-        return <Beylock width={28} height={28} color={colors.primary.darker} />;
-    }
-  };
-
   // Get status badge for device
   const getStatusBadge = (device: Device) => {
     const isOnline = device.is_online === true;
-    
+
     return {
       text: isOnline ? MyDevicesConstants.online : MyDevicesConstants.offline,
       color: isOnline ? colors.success : colors.error,
@@ -183,77 +177,7 @@ const MyDevices: React.FC = () => {
 
   // Render device card - IMPROVED LAYOUT with text ellipsis
   const renderDeviceCard = (device: Device) => {
-    const statusBadge = getStatusBadge(device);
-
-    return (
-      <TouchableOpacity
-        key={device.id}
-        style={styles.deviceCard}
-        onPress={() => handleControl(device)}
-        activeOpacity={0.7}
-        accessibilityLabel={`${device.name} device`}
-        accessibilityHint="Tap to control this device"
-      >
-        <View style={styles.deviceRow}>
-          {/* Device Icon */}
-          <View style={styles.deviceIconWrapper}>
-            {getDeviceIcon(device.device_type)}
-          </View>
-
-          {/* Device Info */}
-          <View style={styles.deviceInfo}>
-            <Typography 
-              variant="h3" 
-              color={colors.text} 
-              style={styles.deviceName}
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {device.name}
-            </Typography>
-            <View style={styles.deviceMeta}>
-              <Typography 
-                variant="caption" 
-                color={colors.secondaryText} 
-                style={styles.locationText}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {device.home ? homes[device.home] || 'Unknown Home' : 'Unknown Home'}
-              </Typography>
-              {device.room && rooms[device.room] && (
-                <>
-                  <View style={styles.metaDot} />
-                  <Typography 
-                    variant="caption" 
-                    color={colors.secondaryText} 
-                    style={styles.locationText}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {rooms[device.room]}
-                  </Typography>
-                </>
-              )}
-            </View>
-            {/* Status Badge */}
-            <View style={[styles.statusBadge, { backgroundColor: statusBadge.backgroundColor }]}>
-              <View style={[styles.statusDot, { backgroundColor: statusBadge.color }]} />
-              <Typography variant="caption" color={statusBadge.color} style={styles.statusText}>
-                {statusBadge.text}
-              </Typography>
-            </View>
-          </View>
-
-          {/* Chevron Icon */}
-          <View style={styles.chevronContainer}>
-            <Typography variant="h1" color={colors.secondaryText} style={styles.chevronIcon}>
-              ›
-            </Typography>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
+    return (<View key={device.id} style={{ marginBottom: 12 }}><LockCard name={device.name} location={device.room_name || (device.room ? rooms[device.room] : '') || device.home_name || (device.home ? homes[device.home] : '') || 'Room'} role={lockRole(device)} connectionLabel={getStatusBadge(device).text} onPress={() => handleControl(device)} /></View>);
   };
 
   // Render filter button
@@ -270,8 +194,8 @@ const MyDevices: React.FC = () => {
         accessibilityLabel={`Filter by ${label}`}
         accessibilityState={{ selected: isActive }}
       >
-        <Typography 
-          variant="body" 
+        <Typography
+          variant="body"
           color={isActive ? colors.text : colors.secondaryText}
           style={styles.filterButtonText}
         >
@@ -284,26 +208,7 @@ const MyDevices: React.FC = () => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBack}
-            accessibilityLabel={MyDevicesConstants.backButtonAccessibilityLabel}
-            accessibilityHint={MyDevicesConstants.backButtonAccessibilityHint}
-          >
-            <BackArrow width={24} height={24} color={colors.surface} />
-          </TouchableOpacity>
-          <View style={styles.headerTextContainer}>
-            <Typography variant="h2" color={colors.surface} style={styles.headerTitle}>
-              {MyDevicesConstants.title}
-            </Typography>
-            <Typography variant="caption" color={colors.surface} style={styles.headerSubtitle}>
-              {MyDevicesConstants.subtitle}
-            </Typography>
-          </View>
-        </View>
-      </View>
+      <PageHeader title="Your devices" onBack={handleBack} />
 
       {/* Main Content */}
       <View style={styles.content}>
@@ -377,7 +282,7 @@ const MyDevices: React.FC = () => {
               </View>
 
               {/* Device List */}
-              <ScrollView 
+              <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
               >
@@ -430,7 +335,7 @@ const MyDevices: React.FC = () => {
       </View>
 
       {/* Bottom Navigation */}
-      <BottomNavigation 
+      <BottomNavigation
         items={[
           { key: 'home', label: 'Home', icon: null },
           { key: 'devices', label: 'Devices', icon: null },
@@ -446,9 +351,7 @@ const MyDevices: React.FC = () => {
             // Already on devices screen
           } else if (key === 'energy') {
             router.push('/(app)/home');
-          } else if (key === 'profile') {
-            setShowProfile(true);
-          }
+          } else if (key === 'profile' || key === 'energy') { router.push({ pathname: '/(app)/home', params: { tab: key } }); }
         }}
       />
 
@@ -490,7 +393,7 @@ const MyDevices: React.FC = () => {
 const styles = {
   container: {
     flex: 1,
-    backgroundColor: colors.navBarBackground,
+    backgroundColor: '#F3F5F8',
   },
   header: {
     backgroundColor: colors.navBarBackground,
@@ -528,7 +431,7 @@ const styles = {
   },
   content: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#F3F5F8',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
@@ -646,7 +549,7 @@ const styles = {
   },
   deviceCard: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: 24,
     marginBottom: Spacing.md,
     padding: Spacing.md,
     shadowColor: colors.text,

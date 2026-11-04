@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -141,8 +142,8 @@ const MyHomes: React.FC = () => {
         {/* Home Image */}
         <View style={styles.homeImageContainer}>
           {imageUri ? (
-            <Image 
-              source={{ uri: imageUri }} 
+            <Image
+              source={{ uri: imageUri }}
               style={styles.homeImage}
             />
           ) : (
@@ -150,7 +151,7 @@ const MyHomes: React.FC = () => {
               <HomeIcon width={48} height={48} color={colors.surface} />
             </View>
           )}
-          
+
           {/* Status Badge */}
           <View style={[styles.statusBadge, { backgroundColor: statusBadge.backgroundColor }]}>
             <Typography variant="caption" color={statusBadge.color} style={styles.statusText}>
@@ -173,7 +174,7 @@ const MyHomes: React.FC = () => {
                 </Typography>
               </View>
             </View>
-            
+
             {/* Guest Count */}
             <View style={styles.guestCount}>
               <Typography variant="caption" color={colors.secondaryText}>
@@ -210,7 +211,7 @@ const MyHomes: React.FC = () => {
                 {MyHomesConstants.controlButton}
               </Typography>
             </TouchableOpacity>
-            
+
             <View style={styles.secondaryButtons}>
               <TouchableOpacity
                 style={styles.secondaryButton}
@@ -220,7 +221,7 @@ const MyHomes: React.FC = () => {
               >
                 <UsersIcon width={18} height={18} color={colors.text} />
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.secondaryButton}
                 onPress={() => handleSettings(home.id)}
@@ -236,7 +237,7 @@ const MyHomes: React.FC = () => {
     );
   };
 
-  return (
+  return ((
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -279,7 +280,7 @@ const MyHomes: React.FC = () => {
             <>
               {/* Home Cards */}
               {homes.map(renderHomeCard)}
-              
+
               {/* Add New Home Card */}
               <TouchableOpacity
                 style={styles.addNewHomeCard}
@@ -300,7 +301,7 @@ const MyHomes: React.FC = () => {
       </ScrollView>
 
       {/* Bottom Navigation */}
-      <BottomNavigation 
+      <BottomNavigation
         items={[
           { key: 'home', label: 'Home', icon: null },
           { key: 'devices', label: 'Devices', icon: null },
@@ -313,48 +314,16 @@ const MyHomes: React.FC = () => {
           if (key === 'home') {
             router.push('/(app)/home');
           } else if (key === 'devices') {
-            router.push('/(HomePage_actions)/MyDevices' as any);
+            router.push('/(app)/home');
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            setShowProfile(true);
+            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
           }
         }}
       />
-
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        onClose={() => setShowProfile(false)}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: homes.length
-        } : undefined}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          // Already on myHomes screen
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
     </View>
-  );
+  ));
 };
 
 const styles = {
@@ -388,7 +357,7 @@ const styles = {
     marginBottom: 1,
   },
   headerSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     opacity: 0.8,
   },
   content: {
@@ -448,7 +417,7 @@ const styles = {
     borderRadius: 16,
   },
   statusText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600' as const,
   },
   homeDetails: {

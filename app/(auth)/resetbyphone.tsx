@@ -42,11 +42,11 @@ export default function ResetByPhone() {
     try {
       // Combine country code with phone number
       const fullPhoneNumber = `${selectedCountry.code}${phoneNumber.replace(/\D/g, '')}`;
-      
+
       const requestData = {
         phone_number: fullPhoneNumber,
       };
-      
+
       if (fromAccountSettings === 'true') {
         await apiClient.post('auth/request-reset-password/', requestData);
       } else {
@@ -54,10 +54,10 @@ export default function ResetByPhone() {
       }
       // Navigate to OTP verification screen with user data
       router.push({
-        pathname: '/(auth)/verify-otp', 
+        pathname: '/(auth)/verify-otp',
         params: { phone_number: fullPhoneNumber, country: selectedCountry.name, flow: 'reset-password', fromAccountSettings: fromAccountSettings === 'true' ? 'true' : 'false' }
       });
-      
+
     } catch (error: any) {
       console.error('Failed to send reset code:', error);
       setError(error.response?.data?.error || 'Failed to send code. Please try again.');
@@ -73,17 +73,17 @@ export default function ResetByPhone() {
 
   const isDisabled = !phoneNumber.trim() || isLoading;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: AUTH_THEME.background }}>
+  return ((
+    <View style={{ flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: AUTH_THEME.background }}>
       {/* Header */}
-      <View style={{ paddingTop: Spacing.xxl, ...Padding.screenHorizontal }}>
+      <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
           style={{
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             backgroundColor: AUTH_THEME.surface,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: Spacing.lg,
@@ -94,13 +94,13 @@ export default function ResetByPhone() {
         </TouchableOpacity>
 
         {/* Phone Icon */}
-        <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.sm }}>
           <View
             style={{
-              width: 96,
-              height: 96,
+              width: 72,
+              height: 72,
               backgroundColor: visuals.headerCircleBg || AUTH_THEME.primary,
-              borderRadius: 48,
+              borderRadius: 36,
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: Spacing.md,
@@ -108,11 +108,11 @@ export default function ResetByPhone() {
           >
             <visuals.headerIcon width={32} height={32} color={AUTH_THEME.text} />
           </View>
-          
-          <Typography variant="h1" style={{ marginBottom: Spacing.xs }}>
+
+          <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
             {copy.title}
           </Typography>
-          
+
           {!!copy.subtitle && (
             <Typography variant="body" color={AUTH_THEME.secondaryText}>
               {copy.subtitle}
@@ -126,7 +126,7 @@ export default function ResetByPhone() {
         style={{ flex: 1 }}
         contentContainerStyle={{
           ...Padding.screenHorizontal,
-          paddingBottom: Spacing.xl,
+          paddingBottom: Spacing.lg,
         }}
       >
         {/* Country/Region Dropdown */}
@@ -137,8 +137,9 @@ export default function ResetByPhone() {
           <TouchableOpacity
             style={{
               backgroundColor: AUTH_THEME.surface,
-              borderRadius: 12,
-              padding: Spacing.md,
+              borderRadius: 14,
+              paddingHorizontal: Spacing.md,
+              minHeight: 52,
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -166,12 +167,12 @@ export default function ResetByPhone() {
             <View
               style={{
                 backgroundColor: colors.surface,
-                borderRadius: 8,
+                borderRadius: 12,
                 borderWidth: 1,
                 borderColor: AUTH_THEME.border,
-                minWidth: 80,
+                minWidth: 84,
                 paddingHorizontal: Spacing.sm,
-                paddingVertical: 10,
+                minHeight: 52,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -180,7 +181,7 @@ export default function ResetByPhone() {
                 {selectedCountry.code}
               </Typography>
             </View>
-            
+
             {/* Phone Number Field */}
             <View style={{ flex: 1 }}>
               <TextField
@@ -191,7 +192,7 @@ export default function ResetByPhone() {
               />
             </View>
           </View>
-          
+
           {error ? (
             <Typography variant="caption" color={AUTH_THEME.error} style={{ marginTop: Spacing.xs }}>
               {error}
@@ -201,7 +202,7 @@ export default function ResetByPhone() {
       </ScrollView>
 
       {/* Footer */}
-      <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg }}>
+      <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg, paddingTop: Spacing.sm }}>
         <AppButton
           variant={isDisabled ? 'primaryDisabled' : 'primaryLarge'}
           title={copy.buttons.primaryTitle}
@@ -209,17 +210,17 @@ export default function ResetByPhone() {
           disabled={isDisabled}
         />
 
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           justifyContent: 'center',
-          marginTop: Spacing.lg 
+          marginTop: Spacing.lg
         }}>
           {visuals.securityIcon ? (
             <visuals.securityIcon width={16} height={16} color={AUTH_THEME.secondaryText} />
           ) : null}
-          <Typography 
-            variant="caption" 
+          <Typography
+            variant="caption"
             color={AUTH_THEME.secondaryText}
             style={{ marginLeft: 4 }}
           >
@@ -235,21 +236,21 @@ export default function ResetByPhone() {
         animationType="slide"
         onRequestClose={() => setShowCountryPicker(false)}
       >
-        <View style={{ 
-          flex: 1, 
+        <View style={{
+          flex: 1,
           backgroundColor: 'rgba(0,0,0,0.5)',
           justifyContent: 'flex-end'
         }}>
-          <View style={{ 
+          <View style={{
             backgroundColor: AUTH_THEME.background,
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
             padding: Spacing.lg,
             maxHeight: '70%'
           }}>
-            <View style={{ 
-              flexDirection: 'row', 
-              justifyContent: 'space-between', 
+            <View style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
               alignItems: 'center',
               marginBottom: Spacing.lg
             }}>
@@ -258,7 +259,7 @@ export default function ResetByPhone() {
                 <Typography variant="body" color={AUTH_THEME.primary}>Cancel</Typography>
               </TouchableOpacity>
             </View>
-            
+
             <FlatList
               data={countries}
               keyExtractor={(item) => item.code}
@@ -283,7 +284,7 @@ export default function ResetByPhone() {
         </View>
       </Modal>
     </View>
-  );
+  ));
 };
 
 

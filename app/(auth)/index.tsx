@@ -16,14 +16,14 @@ export default function WelcomeScreen() {
     const checkAuth = async () => {
       try {
         const isAuthenticated = await AsyncStorage.getItem('isAuthenticated');
-        
+
         if (isAuthenticated === 'true') {
           console.log('🔐 Auth index: Found authentication flag, validating session...');
-          
+
           try {
             // Validate the session is still valid
             const response = await apiClient.get('user/profile/');
-            
+
             if (response.status === 200) {
               console.log('✅ Auth index: Session is valid, navigating to home');
               // Session is valid, go to home
@@ -34,7 +34,7 @@ export default function WelcomeScreen() {
             // Session is invalid or expired
             console.log('❌ Auth index: Session validation failed:', error.response?.status);
             console.log('🔒 Clearing authentication data');
-            
+
             // Clear all auth-related data
             await AsyncStorage.multiRemove([
               'userData',
@@ -44,14 +44,14 @@ export default function WelcomeScreen() {
             ]);
           }
         }
-        
+
         setIsLoading(false);
       } catch (error) {
         console.error('Error checking authentication:', error);
         setIsLoading(false);
       }
     };
-    
+
     checkAuth();
   }, []);
 
@@ -70,7 +70,7 @@ export default function WelcomeScreen() {
     );
   }
 
-  return (
+  return ((
     <ImageBackground
       source={require('../../assets/images/Vector.png')}
       resizeMode="cover"
@@ -90,18 +90,18 @@ export default function WelcomeScreen() {
           <AppButton
             variant="primaryLarge"
             title={LOGIN_STRINGS.welcome.actions.login}
-            onPress={() => router.push('./loginpage')}
+            onPress={() => { router.push('./loginpage') }}
           />
           <View style={{ height: Spacing.sm }} />
           <AppButton
             variant="secondaryLarge"
             title={LOGIN_STRINGS.welcome.actions.createAccount}
-            onPress={() => router.push('./register')}
+            onPress={() => { router.push('./register') }}
           />
         </View>
       </View>
     </ImageBackground>
-  );
+  ));
 }
 
 const styles = StyleSheet.create({

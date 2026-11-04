@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Image, ScrollView, TouchableOpacity, View } from 'react-native';
@@ -18,7 +19,7 @@ interface HomeData {
 
 const AddHomeDone = () => {
   const params = useLocalSearchParams();
-  
+
   // Default values if no data is passed
   const homeData: HomeData = {
     homeName: (params.homeName as string) || ADD_HOME_DONE.HOME_CARD.TITLE,
@@ -50,7 +51,7 @@ const AddHomeDone = () => {
     }
   };
 
-  return (
+  return ((
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -64,16 +65,16 @@ const AddHomeDone = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         {/* Celebration Illustration */}
         <View style={styles.celebrationContainer}>
-          <Celebration 
-            width={ADD_HOME_DONE.DIMENSIONS.CELEBRATION_SIZE} 
-            height={ADD_HOME_DONE.DIMENSIONS.CELEBRATION_SIZE} 
+          <Celebration
+            width={ADD_HOME_DONE.DIMENSIONS.CELEBRATION_SIZE}
+            height={ADD_HOME_DONE.DIMENSIONS.CELEBRATION_SIZE}
           />
         </View>
 
@@ -101,7 +102,7 @@ const AddHomeDone = () => {
               </View>
             )}
           </View>
-          
+
           <View style={styles.homeDetails}>
             <Typography variant="h2" color={colors.surface} style={styles.homeName}>
               {homeData.homeName}
@@ -124,9 +125,9 @@ const AddHomeDone = () => {
             accessibilityLabel={HOME_ACCESSIBILITY.LABELS.EDIT_BUTTON}
             accessibilityHint={HOME_ACCESSIBILITY.HINTS.EDIT_BUTTON}
           />
-          
+
           <View style={styles.buttonSpacing} />
-          
+
           <AppButton
             variant={ADD_HOME_DONE.ACTIONS.FINISH_SETUP.VARIANT}
             title={ADD_HOME_DONE.ACTIONS.FINISH_SETUP.TEXT}
@@ -137,7 +138,7 @@ const AddHomeDone = () => {
         </View>
       </ScrollView>
     </View>
-  );
+  ));
 };
 
 const styles = {

@@ -1,3 +1,5 @@
+import PageHeader from '@/components/PageHeader';
+import ProfileSection from '@/components/ProfileSection';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -54,13 +56,13 @@ export default function ProfilePage({
       const loadData = async () => {
         try {
           setIsLoading(true);
-          
+
           // Load user data from AsyncStorage
           const userDataString = await AsyncStorage.getItem('userData');
           let userEmail = '';
           let firstName = '';
           let profilePic = '';
-          
+
           if (userDataString) {
             const storedUser = JSON.parse(userDataString);
             userEmail = storedUser.email || '';
@@ -111,7 +113,7 @@ export default function ProfilePage({
 
   // Swipe to dismiss animation
   const translateX = useRef(new Animated.Value(0)).current;
-  
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -167,14 +169,14 @@ export default function ProfilePage({
 
   const handleNavigationWithModalClose = (path: string) => {
     if (isNavigating.current) return;
-    
+
     isNavigating.current = true;
     onClose?.(); // Close modal
-    
+
     setTimeout(() => {
       router.push(path as any);
     }, 100); // Wait for modal animation
-    
+
     setTimeout(() => {
       isNavigating.current = false;
     }, 600);
@@ -197,297 +199,18 @@ export default function ProfilePage({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent={true}
-    >
-      <Pressable 
-        style={{ 
-          flex: 1, 
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
-          justifyContent: 'flex-end',
-          alignItems: 'flex-end'
-        }}
-        onPress={onClose}
-      >
-        <Animated.View 
-          {...panResponder.panHandlers}
-          style={{ 
-            width: 316,
-            height: '100%',
-            backgroundColor: colors.surface,
-            borderTopLeftRadius: 12,
-            borderBottomLeftRadius: 12,
-            shadowColor: '#000',
-            shadowOffset: { width: -2, height: 0 },
-            shadowOpacity: 0.1,
-            shadowRadius: 8,
-            elevation: 8,
-            transform: [{ translateX }],
-          }}
-        >
-          <ScrollView 
-            style={{ flex: 1 }} 
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ flexGrow: 1 }}
-          >
-            <View style={{ 
-              flex: 1, 
-              paddingHorizontal: Spacing.lg, 
-              paddingTop: Spacing.xxl + Spacing.lg,
-              paddingBottom: Spacing.xxl 
-            }}>
-              {/* User Profile Header */}
-              <View style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                marginBottom: Spacing.lg 
-              }}>
-                <View style={{ marginRight: Spacing.sm }}>
-                  {profilePicture ? (
-                    <Image 
-                      source={{ uri: profilePicture }} 
-                      style={{ 
-                        width: 50, 
-                        height: 50, 
-                        borderRadius: 25 
-                      }} 
-                    />
-                  ) : (
-                    <View style={{
-                      width: 50,
-                      height: 50,
-                      borderRadius: 25,
-                      backgroundColor: colors.primary.base,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      <Typography variant="h3" color={colors.surface}>
-                        {displayName.charAt(0).toUpperCase()}
-                      </Typography>
-                    </View>
-                  )}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Typography 
-                    variant={isNameBold ? "body" : "accent"} 
-                    color={colors.text}
-                    style={{ marginBottom: Spacing.xs }}
-                  >
-                    {displayName}
-                  </Typography>
-                  {displayEmail && (
-                    <Typography 
-                      variant="caption" 
-                      color={colors.secondaryText}
-                      style={{ fontSize: 12 }}
-                    >
-                      {displayEmail}
-                    </Typography>
-                  )}
-                </View>
-              </View>
-
-            {/* Add New Device Button */}
-            <View style={{ marginBottom: Spacing.lg }}>
-              <TouchableOpacity
-                style={{
-                  backgroundColor: colors.primary.base,
-                  borderRadius: 12,
-                  paddingVertical: Spacing.sm,
-                  paddingHorizontal: Spacing.lg,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-                onPress={handleAddDevice}
-                accessibilityLabel={ProfileConstants.addDeviceAccessibilityLabel}
-                accessibilityHint={ProfileConstants.addDeviceAccessibilityHint}
-              >
-                <PlusIcon width={16} height={16} color={colors.text} />
-                <Typography
-                  variant="accent"
-                  color={colors.text}
-                  style={{ 
-                    fontWeight: 'bold',
-                    marginLeft: Spacing.xs
-                  }}
-                >
-                  {ProfileConstants.addNewDevice}
-                </Typography>
-              </TouchableOpacity>
-            </View>
-
-            {/* Navigation Menu Items */}
-            <View style={{ marginBottom: Spacing.md }}>
-              {/* My Homes */}
-              <TouchableOpacity 
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: Spacing.sm,
-                  paddingHorizontal: Spacing.xs,
-                  borderRadius: 6,
-                }}
-                onPress={handleMyHomes}
-                accessibilityLabel={ProfileConstants.myHomesAccessibilityLabel}
-                accessibilityHint={ProfileConstants.myHomesAccessibilityHint}
-              >
-                <View style={{ 
-                  flexDirection: 'row', 
-                  alignItems: 'center', 
-                  flex: 1 
-                }}>
-                  <View style={{
-                    marginRight: Spacing.sm,
-                    width: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <HomeIcon width={20} height={20} color={colors.text} />
-                  </View>
-                  <Typography variant="caption" color={colors.text} style={{ flex: 1 }}>
-                    {ProfileConstants.myHomes}
-                  </Typography>
-                </View>
-                <View style={{ marginLeft: Spacing.xs }}>
-                  <View style={{
-                    backgroundColor: colors.primary.base,
-                    borderRadius: 10,
-                    minWidth: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingHorizontal: Spacing.xs,
-                  }}>
-                    <Typography variant="caption" color={colors.text} style={{ fontWeight: 'bold', fontSize: 12 }}>
-                      {homesCount}
-                    </Typography>
-                  </View>
-                </View>
-              </TouchableOpacity>
-
-              {/* Invite Family & Friends */}
-              <TouchableOpacity 
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: Spacing.sm,
-                  paddingHorizontal: Spacing.xs,
-                  borderRadius: 6,
-                }}
-                onPress={handleInviteFamily}
-                accessibilityLabel={ProfileConstants.inviteAccessibilityLabel}
-                accessibilityHint={ProfileConstants.inviteAccessibilityHint}
-              >
-                <View style={{ 
-                  flexDirection: 'row', 
-                  alignItems: 'center', 
-                  flex: 1 
-                }}>
-                  <View style={{
-                    marginRight: Spacing.sm,
-                    width: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Invite width={20} height={20} color={colors.text} />
-                  </View>
-                  <Typography variant="caption" color={colors.text} style={{ flex: 1 }}>
-                    {ProfileConstants.inviteFamilyFriends}
-                  </Typography>
-                </View>
-              </TouchableOpacity>
-            </View>
-
-            {/* Settings Section */}
-            <View>
-              <View style={{
-                height: 1,
-                backgroundColor: colors.border,
-                marginVertical: Spacing.sm,
-              }} />
-              
-              {/* Account Settings */}
-              <TouchableOpacity 
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: Spacing.sm,
-                  paddingHorizontal: Spacing.xs,
-                  borderRadius: 6,
-                }}
-                onPress={handleAccountSettings}
-                accessibilityLabel={ProfileConstants.accountSettingsAccessibilityLabel}
-                accessibilityHint={ProfileConstants.accountSettingsAccessibilityHint}
-              >
-                <View style={{ 
-                  flexDirection: 'row', 
-                  alignItems: 'center', 
-                  flex: 1 
-                }}>
-                  <View style={{
-                    marginRight: Spacing.sm,
-                    width: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <SettingsIcon width={20} height={20} color={colors.text} />
-                  </View>
-                  <Typography variant="caption" color={colors.text} style={{ flex: 1 }}>
-                    {ProfileConstants.accountSettings}
-                  </Typography>
-                </View>
-              </TouchableOpacity>
-
-              {/* Help & Support */}
-              <TouchableOpacity 
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: Spacing.sm,
-                  paddingHorizontal: Spacing.xs,
-                  borderRadius: 6,
-                }}
-                onPress={handleHelpSupport}
-                accessibilityLabel={ProfileConstants.helpSupportAccessibilityLabel}
-                accessibilityHint={ProfileConstants.helpSupportAccessibilityHint}
-              >
-                <View style={{ 
-                  flexDirection: 'row', 
-                  alignItems: 'center', 
-                  flex: 1 
-                }}>
-                  <View style={{
-                    marginRight: Spacing.sm,
-                    width: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <HelpSupport width={20} height={20} color={colors.text} />
-                  </View>
-                  <Typography variant="caption" color={colors.text} style={{ flex: 1 }}>
-                    {ProfileConstants.helpSupport}
-                  </Typography>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-        </Animated.View>
-      </Pressable>
-    </Modal>
-  );
+ <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+  <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'flex-end' }} onPress={onClose}>
+   <Animated.View {...panResponder.panHandlers} style={{ width: 316, height: '100%', backgroundColor: '#F3F5F8', transform: [{ translateX }], borderTopLeftRadius: 24, borderBottomLeftRadius: 24, overflow: 'hidden' }}>
+    <PageHeader title="Profile" onBack={onClose} />
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
+     <ProfileSection name={name} email={email} profilePicture={profilePicture} homesCount={homesCount}
+       onAddDevice={handleAddDevice} onMyHomes={handleMyHomes} onInviteFamily={handleInviteFamily}
+       onAccountSettings={handleAccountSettings} onHelpSupport={handleHelpSupport} />
+    </ScrollView>
+   </Animated.View>
+  </Pressable>
+ </Modal>
+);
 }
 

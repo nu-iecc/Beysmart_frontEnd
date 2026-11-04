@@ -1,3 +1,4 @@
+import { SetupMoment } from '@/components/SetupScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -11,7 +12,7 @@ import { Typography } from '../../design-system/typography/typography';
 const AddDevice16 = () => {
   const params = useLocalSearchParams();
   const [bleDeviceId, setBleDeviceId] = useState<string | null>(null);
-  
+
   // Load BLE device ID from AsyncStorage when component mounts
   useEffect(() => {
     const loadBleDeviceId = async () => {
@@ -27,7 +28,7 @@ const AddDevice16 = () => {
     };
     loadBleDeviceId();
   }, []);
-  
+
   const handleGoToDevice = () => {
     // Navigate to lock control screen with device details including BLE device ID
     // Use replace() to remove calibration success screen from stack
@@ -37,13 +38,13 @@ const AddDevice16 = () => {
       homeName: params.homeName as string || params.deviceLocation as string,
       deviceId: params.deviceId as string,
     };
-    
+
     // Add BLE device ID if available
     if (bleDeviceId) {
       navParams.bleDeviceId = bleDeviceId;
       console.log('📡 Passing BLE Device ID to lock screen:', bleDeviceId);
     }
-    
+
     router.replace({
       pathname: '/(Lock/Unlock)/LockControlScreen' as any,
       params: navParams
@@ -56,43 +57,27 @@ const AddDevice16 = () => {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Celebration Illustration */}
-      <View style={styles.illustrationContainer}>
-        <Celebration 
-          width={CALIBRATION_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} 
-          height={CALIBRATION_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} 
-        />
-      </View>
-
-      {/* Success Message */}
-      <View style={styles.messageContainer}>
-        <Typography variant="h1" color={CALIBRATION_SUCCESS.COLORS.TITLE_TEXT} style={styles.title}>
-          {CALIBRATION_SUCCESS.CONTENT.TITLE}
-        </Typography>
-      </View>
-
-      {/* Action Buttons */}
-      <View style={styles.buttonContainer}>
+    <SetupMoment
+      art={<Celebration width={CALIBRATION_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} height={CALIBRATION_SUCCESS.DIMENSIONS.ILLUSTRATION_SIZE} />}
+      title="You're all set"
+      subtitle="Your lock is calibrated and ready to use."
+      actions={<>
         <AppButton
-          variant={CALIBRATION_SUCCESS.ACTIONS.GO_TO_DEVICE.VARIANT}
+          variant={CALIBRATION_SUCCESS.ACTIONS.GO_TO_HOMEPAGE.VARIANT}
           title={CALIBRATION_SUCCESS.ACTIONS.GO_TO_DEVICE.TEXT}
           onPress={handleGoToDevice}
           accessibilityLabel={CALIBRATION_SUCCESS.ACTIONS.GO_TO_DEVICE.TEXT}
           accessibilityHint={CALIBRATION_SUCCESS.ACTIONS.GO_TO_DEVICE.HINT}
         />
-        
-        <View style={styles.buttonSpacer} />
-        
         <AppButton
-          variant={CALIBRATION_SUCCESS.ACTIONS.GO_TO_HOMEPAGE.VARIANT}
-          title={CALIBRATION_SUCCESS.ACTIONS.GO_TO_HOMEPAGE.TEXT}
+          variant="secondaryMedium"
+          title="Back to home"
           onPress={handleGoToHomepage}
           accessibilityLabel={CALIBRATION_SUCCESS.ACTIONS.GO_TO_HOMEPAGE.TEXT}
           accessibilityHint={CALIBRATION_SUCCESS.ACTIONS.GO_TO_HOMEPAGE.HINT}
         />
-      </View>
-    </View>
+      </>}
+    />
   );
 };
 

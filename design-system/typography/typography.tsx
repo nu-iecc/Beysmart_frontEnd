@@ -1,6 +1,5 @@
 import React from 'react';
 import { StyleSheet, Text, TextProps } from 'react-native';
-import { scaleFont } from '../../utils/responsive';
 import { colors } from '../colors/colors';
 import { fonts } from './fonts';
 
@@ -34,40 +33,39 @@ type Variant =
 
   const styles = StyleSheet.create({
     h1: {
-      fontSize: scaleFont(fonts.size.h1),
-      lineHeight: scaleFont(fonts.lineHeight.h1),
+      fontSize: fonts.size.h1,
+      lineHeight: fonts.lineHeight.h1,
       fontWeight: fonts.weight.bold as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.bold,
     },
     h2: {
-      fontSize: scaleFont(fonts.size.h2),
-      lineHeight: scaleFont(fonts.lineHeight.h2),
+      fontSize: fonts.size.h2,
+      lineHeight: fonts.lineHeight.h2,
       fontWeight: fonts.weight.bold as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.bold,
     },
     h3: {
-      fontSize: scaleFont(fonts.size.h3),
-      lineHeight: scaleFont(fonts.lineHeight.h3),
+      fontSize: fonts.size.h3,
+      lineHeight: fonts.lineHeight.h3,
       fontWeight: fonts.weight.medium as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.medium,
     },
     accent: {
-      fontSize: scaleFont(fonts.size.accent),
-      lineHeight: scaleFont(fonts.lineHeight.body),
+      fontSize: fonts.size.accent,
+      lineHeight: fonts.lineHeight.body,
       fontWeight: fonts.weight.bold as any,
-      fontFamily: fonts.family.base,
+      fontFamily: fonts.family.bold,
     },
     body: {
-      fontSize: scaleFont(fonts.size.body),
-      lineHeight: scaleFont(fonts.lineHeight.body),
+      fontSize: fonts.size.body,
+      lineHeight: fonts.lineHeight.body,
       fontWeight: fonts.weight.regular as any,
       fontFamily: fonts.family.base,
     },
     caption: {
-      fontSize: scaleFont(fonts.size.caption),
-      lineHeight: scaleFont(fonts.lineHeight.caption),
+      fontSize: fonts.size.caption,
+      lineHeight: fonts.lineHeight.caption,
       fontWeight: fonts.weight.regular as any,
       fontFamily: fonts.family.base,
     },
   });
-  

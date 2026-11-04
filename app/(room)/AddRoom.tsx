@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -79,7 +80,7 @@ const ROOM_ICON_MAP = {
 
 const AddRoom: React.FC = () => {
   const params = useLocalSearchParams()
-  
+
   // Form state
   const [formData, setFormData] = useState<FormData>({
     roomName: '',
@@ -177,17 +178,17 @@ const AddRoom: React.FC = () => {
 
   // Handle room type selection
   const handleRoomTypeSelect = (roomType: string) => {
-    setFormData(prev => ({ 
-      ...prev, 
-      roomType: prev.roomType === roomType ? '' : roomType 
+    setFormData(prev => ({
+      ...prev,
+      roomType: prev.roomType === roomType ? '' : roomType
     }));
   };
 
   // Handle room dimensions selection
   const handleDimensionsSelect = (dimensions: string) => {
-    setFormData(prev => ({ 
-      ...prev, 
-      roomDimensions: prev.roomDimensions === dimensions ? '' : dimensions 
+    setFormData(prev => ({
+      ...prev,
+      roomDimensions: prev.roomDimensions === dimensions ? '' : dimensions
     }));
   };
 
@@ -210,12 +211,12 @@ const AddRoom: React.FC = () => {
 
       if (!result.canceled && result.assets[0]) {
         const selectedAsset = result.assets[0];
-        
+
         if (selectedAsset.fileSize && selectedAsset.fileSize > 5 * 1024 * 1024) {
           Alert.alert('File Too Large', 'Please select an image smaller than 5MB.');
           return;
         }
-        
+
         setFormData(prev => ({ ...prev, roomPhoto: selectedAsset.uri }));
       }
     } catch (error) {
@@ -261,7 +262,7 @@ const AddRoom: React.FC = () => {
         // Find the selected home to get its name
         const selectedHome = homes.find(home => home.id === formData.addedTo);
         const homeName = selectedHome?.name || 'Unknown Home';
-        
+
         router.push({
           pathname: '/(room)/AddRoomDone' as never,
           params: {
@@ -316,13 +317,13 @@ const AddRoom: React.FC = () => {
         accessibilityHint={ROOM_ACCESSIBILITY.HINTS.ROOM_TYPE_BUTTON}
         accessibilityRole="button"
       >
-        <IconComponent 
-          width={24} 
-          height={24} 
-          color={colors.text} 
+        <IconComponent
+          width={24}
+          height={24}
+          color={colors.text}
         />
-        <Typography 
-          variant="caption" 
+        <Typography
+          variant="caption"
           color={colors.text}
           style={styles.roomTypeText}
         >
@@ -355,8 +356,8 @@ const AddRoom: React.FC = () => {
             )}
           </View>
         </View>
-        <Typography 
-          variant="body" 
+        <Typography
+          variant="body"
           color={colors.text}
           style={styles.dimensionsText}
         >
@@ -366,7 +367,7 @@ const AddRoom: React.FC = () => {
     );
   };
 
-  return (
+  return ((
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -469,9 +470,9 @@ const AddRoom: React.FC = () => {
               <Typography variant="body" color={ADD_ROOM.COLORS.SECTION_TITLE} style={styles.advancedTitle}>
                 {ADD_ROOM.SECTIONS.ADVANCED_OPTIONS}
               </Typography>
-              <DropdownIcon 
-                width={20} 
-                height={20} 
+              <DropdownIcon
+                width={20}
+                height={20}
                 color={colors.text}
                 style={{
                   transform: [{ rotate: isAdvancedExpanded ? '180deg' : '0deg' }]
@@ -520,9 +521,9 @@ const AddRoom: React.FC = () => {
               variant="primaryLarge"
               title={isLoading ? 'Creating Room...' : ADD_ROOM.NAVIGATION.CREATE_BUTTON}
               icon={isLoading ? (
-                <ActivityIndicator 
-                  size="small" 
-                  color={colors.primary.lighter} 
+                <ActivityIndicator
+                  size="small"
+                  color={colors.primary.lighter}
                   style={{ marginRight: Spacing.xs }}
                 />
               ) : undefined}
@@ -534,19 +535,19 @@ const AddRoom: React.FC = () => {
 
             {/* Loading Message */}
             {isLoading && (
-              <View style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
                 justifyContent: 'center',
-                marginTop: Spacing.md 
+                marginTop: Spacing.md
               }}>
-                <ActivityIndicator 
-                  size="small" 
-                  color={colors.primary.darker} 
+                <ActivityIndicator
+                  size="small"
+                  color={colors.primary.darker}
                   style={{ marginRight: Spacing.xs }}
                 />
-                <Typography 
-                  variant="caption" 
+                <Typography
+                  variant="caption"
                   color={colors.primary.darker}
                 >
                   Setting up your room and connecting to ThingsBoard...
@@ -558,7 +559,7 @@ const AddRoom: React.FC = () => {
       </ScrollView>
 
       {/* Bottom Navigation */}
-      <BottomNavigation 
+      <BottomNavigation
         items={[
           { key: 'home', label: 'Home', icon: null },
           { key: 'devices', label: 'Devices', icon: null },
@@ -571,48 +572,17 @@ const AddRoom: React.FC = () => {
           if (key === 'home') {
             router.push('/(app)/home');
           } else if (key === 'devices') {
-            router.push('/(HomePage_actions)/MyDevices' as any);
+            router.push('/(app)/home');
           } else if (key === 'energy') {
             router.push('/(app)/home');
           } else if (key === 'profile') {
-            setShowProfile(true);
+            router.push({ pathname: '/(app)/home', params: { tab: 'profile' } });
           }
         }}
       />
 
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: homes.length
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
     </View>
-  );
+  ));
 };
 
 const styles = {
@@ -644,7 +614,7 @@ const styles = {
     fontWeight: '600' as const,
   },
   stepIndicator: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'right' as const,
   },
   content: {

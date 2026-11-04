@@ -17,14 +17,14 @@ export default function Index() {
       try {
         // Check if user was previously authenticated
         const isAuthenticated = await AsyncStorage.getItem('isAuthenticated');
-        
+
         if (isAuthenticated === 'true') {
           console.log('🔐 Found authentication flag, validating session with backend...');
-          
+
           try {
             // Validate the session is still valid by making an authenticated request
             const response = await apiClient.get('user/profile/');
-            
+
             if (response.status === 200) {
               console.log('✅ Session is valid, navigating to home');
               // Session is valid, go to home
@@ -35,7 +35,7 @@ export default function Index() {
             // Session is invalid or expired
             console.log('❌ Session validation failed:', error.response?.status);
             console.log('🔒 Clearing authentication data and showing login');
-            
+
             // Clear all auth-related data
             await AsyncStorage.multiRemove([
               'userData',
@@ -47,14 +47,14 @@ export default function Index() {
         } else {
           console.log('ℹ️ No authentication flag found, showing welcome screen');
         }
-        
+
         setIsLoading(false);
       } catch (error) {
         console.error('Error checking auth status:', error);
         setIsLoading(false);
       }
     };
-    
+
     checkAuth();
   }, []);
 
@@ -73,7 +73,7 @@ export default function Index() {
     );
   }
 
-  return (
+  return ((
     <ImageBackground
       source={require('../assets/images/Vector.png')}
       resizeMode="cover"
@@ -93,13 +93,16 @@ export default function Index() {
           <AppButton
             variant="primaryLarge"
             title={LOGIN_STRINGS.welcome.actions.login}
-            onPress={() => router.push('/(auth)/loginpage')}
+            onPress={() => {
+              console.log('Login button pressed');
+              router.push('/(auth)/loginpage');
+            }}
           />
           <View style={{ height: Spacing.sm }} />
           <AppButton
             variant="secondaryLarge"
             title={LOGIN_STRINGS.welcome.actions.createAccount}
-            onPress={() => { 
+            onPress={() => {
               console.log('Create Account button pressed');
               router.push('/(auth)/register');
             }}
@@ -107,7 +110,7 @@ export default function Index() {
         </View>
       </View>
     </ImageBackground>
-  );
+  ));
 }
 
 const styles = StyleSheet.create({

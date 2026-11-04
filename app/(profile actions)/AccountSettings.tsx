@@ -1,18 +1,43 @@
+import LockSubpage from '@/components/LockSubpage';
+import { toast } from 'sonner-native';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { BASE_URL, getMediaUrl } from '../../constants/api';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
-import { BackArrow } from '../../design-system/icons';
-import { AlertIcon, ColorPaletteIcon, EditingIcon, FingerprintIcon, GlobalIcon, HomeIcon, KeyIcon, QuestionIcon, ShieldIcon, TrustedPersonIcon } from '../../design-system/icons/filled/';
-import { LabeledToggle, TextField } from '../../design-system/inputs';
-import { Spacing } from '../../design-system/Layout/spacing';
+import { AlertIcon, ColorPaletteIcon, FingerprintIcon, GlobalIcon, HomeIcon, KeyIcon, QuestionIcon, ShieldIcon, TrustedPersonIcon } from '../../design-system/icons/filled/';
+import { TextField } from '../../design-system/inputs';
 import { AccountSettingsConstants as ACC } from '../../design-system/Profile actions/Constants';
 import { Typography } from '../../design-system/typography/typography';
 import { biometricsService } from '../../services';
 import apiClient from '../../utils/api';
+
+type IconComponent = React.ComponentType<{ width?: number; height?: number; color?: string }>;
+
+function SectionLabel({ children }: { children: string }) {
+  return <Typography variant="caption" color={colors.disabled} style={styles.sectionLabel}>{children.toUpperCase()}</Typography>;
+}
+
+function Row({ Icon, iconBg = colors.navBarBackground, iconColor = colors.surface, image, label, subtitle, subtitleColor = colors.secondaryText, onPress, right, divider }: {
+  Icon?: IconComponent; iconBg?: string; iconColor?: string; image?: string | null; label: string; subtitle?: string; subtitleColor?: string;
+  onPress?: () => void; right?: React.ReactNode; divider?: boolean;
+}) {
+  const content = <>
+    {image ? <Image source={{ uri: image }} style={styles.rowIcon} /> : <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>{Icon && <Icon width={19} height={19} color={iconColor} />}</View>}
+    <View style={styles.rowCopy}>
+      <Typography variant="body" style={styles.rowLabel}>{label}</Typography>
+      {!!subtitle && <Typography variant="caption" color={subtitleColor} style={styles.rowSubtitle}>{subtitle}</Typography>}
+    </View>
+    {(right || onPress) && <View style={styles.rowAccessory}>{right ?? <Ionicons name="chevron-forward" size={18} color={colors.notactiveicon} />}</View>}
+  </>;
+  const rowStyle = [styles.row, divider && styles.divider];
+  return onPress
+    ? <TouchableOpacity style={rowStyle} onPress={onPress} activeOpacity={0.7} accessibilityRole="button">{content}</TouchableOpacity>
+    : <View style={rowStyle}>{content}</View>;
+}
 
 interface UserProfile {
   first_name?: string;
@@ -26,6 +51,7 @@ interface UserProfile {
 }
 
 const AccountSettings = () => {
+ const comingSoon = (label: string) => () => toast.info(label + ' is coming soon.');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
   const [firstName, setFirstName] = useState('');
@@ -67,22 +93,22 @@ const AccountSettings = () => {
         const stored2FA = await AsyncStorage.getItem('twoFactorEnabled');
         if (stored2FA !== null) setTwoFAEnabled(stored2FA === 'true');
       } catch {}
-      
+
       // Load biometric settings
       try {
         setIsLoadingBiometrics(true);
         const hasHardware = await biometricsService.hasHardware();
         const isEnrolled = await biometricsService.isEnrolled();
         const canSetup = await biometricsService.canSetupBiometrics();
-        
+
         console.log('🔐 Biometric check:', { hasHardware, isEnrolled, canSetup });
-        
+
         setBiometricsAvailable(canSetup);
-        
+
         if (canSetup) {
           const isEnabled = await biometricsService.isBiometricsEnabled();
           setBiometricsEnabled(isEnabled);
-          
+
           const typeName = await biometricsService.getBiometricTypeName();
           setBiometricTypeName(typeName);
           console.log('🔐 Biometric type:', typeName, 'Enabled:', isEnabled);
@@ -144,7 +170,7 @@ const AccountSettings = () => {
           setUser(data);
           setFirstName(data.first_name || '');
           setLastName(data.last_name || '');
-          
+
           // Update AsyncStorage with fresh data
           const userDataString = await AsyncStorage.getItem('userData');
           if (userDataString) {
@@ -174,15 +200,15 @@ const AccountSettings = () => {
       const authResult = await biometricsService.authenticate(
         `Authenticate with ${biometricTypeName} to enable biometric login`
       );
-      
+
       if (authResult.success) {
         // Get user phone from stored data
         const userData = await AsyncStorage.getItem('userData');
         const phoneNumber = userData ? JSON.parse(userData).phone_number : '';
-        
+
         // Call backend to generate biometric token
         const enableResult = await biometricsService.enableBiometrics(phoneNumber);
-        
+
         if (enableResult.success) {
           setBiometricsEnabled(true);
           Alert.alert('Success', `${biometricTypeName} login has been enabled.`);
@@ -232,7 +258,7 @@ const AccountSettings = () => {
     try {
       // Call the backend logout API
       await apiClient.post('auth/logout/');
-      
+
       // Clear session data but preserve biometric settings
       await AsyncStorage.multiRemove([
         'userData',
@@ -245,7 +271,7 @@ const AccountSettings = () => {
         'isAuthenticated',
         'loginMethod'
       ]);
-      
+
       // Navigate to welcome page (biometrics will still work)
       router.replace('/');
     } catch (error) {
@@ -276,7 +302,7 @@ const AccountSettings = () => {
     try {
       // Call the backend logout API
       await apiClient.post('auth/logout/');
-      
+
       // Clear all stored data from AsyncStorage
       await AsyncStorage.multiRemove([
         'userData',
@@ -289,10 +315,10 @@ const AccountSettings = () => {
         'isAuthenticated',
         'loginMethod'
       ]);
-      
+
       // Clear biometric settings (including token)
       await biometricsService.clearBiometricSettings();
-      
+
       // Navigate to welcome page
       router.replace('/');
     } catch (error) {
@@ -379,444 +405,139 @@ const AccountSettings = () => {
   const unitsLanguageSubtitle = `${prefUnits === 'F' ? '°F' : prefUnits === 'C' ? '°C' : '°F'}, ${prefLanguage || 'English'}`;
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack} accessibilityLabel={ACC.ACCESSIBILITY.BACK} accessibilityHint={ACC.ACCESSIBILITY.BACK_HINT}>
-            <BackArrow width={24} height={24} color={colors.surface} />
-          </TouchableOpacity>
-          <View>
-            <Typography variant="h3" color={colors.surface} style={styles.headerTitle}>{ACC.TITLE}</Typography>
-            <Typography variant="caption" color={colors.surface}>{ACC.SUBTITLE}</Typography>
+    <LockSubpage title="Account settings" lockName="Your profile and preferences" busy={isSaving}>
+      <View style={styles.content}>
+        <View style={styles.card}>
+          <View style={styles.profile}>
+            <TouchableOpacity style={styles.avatarButton} onPress={handlePictureEdit} accessibilityRole="button" accessibilityLabel="Change profile photo">
+              {profileImage
+                ? <Image source={{ uri: profileImage }} style={styles.avatar} />
+                : <View style={[styles.avatar, styles.avatarFallback]}><Typography variant="h2">{displayName.charAt(0).toUpperCase()}</Typography></View>}
+              <View style={styles.avatarEdit}><Ionicons name="pencil" size={12} color={colors.text} /></View>
+            </TouchableOpacity>
+            <View style={styles.profileCopy}>
+              <Typography variant="h3" numberOfLines={2} style={styles.profileName}>{displayName}</Typography>
+              {!!user?.email && <View style={styles.contact}>
+                <Ionicons name="mail-outline" size={14} color={colors.disabled} />
+                <Typography variant="caption" color={colors.secondaryText} numberOfLines={1} style={styles.contactText}>{user.email}</Typography>
+                {user.email_verified && <Ionicons name="checkmark-circle" size={15} color={colors.success} accessibilityLabel="Verified email" />}
+              </View>}
+              {!!user?.phone_number && <View style={styles.contact}>
+                <Ionicons name="call-outline" size={14} color={colors.disabled} />
+                <Typography variant="caption" color={colors.secondaryText} numberOfLines={1} style={styles.contactText}>{user.phone_number}</Typography>
+              </View>}
+            </View>
           </View>
+          <View style={styles.dividerLine} />
+          {isEditingName ? <>
+            <TextField label={ACC.FIELDS.FIRST_NAME.LABEL} value={firstName} onChangeText={setFirstName} placeholder={ACC.FIELDS.FIRST_NAME.PLACEHOLDER} disabled={isSaving} />
+            <TextField label={ACC.FIELDS.LAST_NAME.LABEL} value={lastName} onChangeText={setLastName} placeholder={ACC.FIELDS.LAST_NAME.PLACEHOLDER} disabled={isSaving} />
+            <View style={styles.buttons}>
+              <View style={styles.buttonCell}><AppButton variant="secondarySmall" title={ACC.CTA.CANCEL} onPress={handleNameCancel} disabled={isSaving} /></View>
+              <View style={styles.buttonCell}><AppButton variant="primarySmall" title={isSaving ? 'Saving...' : ACC.CTA.SAVE} onPress={handleNameSave} disabled={isSaving} /></View>
+            </View>
+          </> : <TouchableOpacity style={styles.editName} onPress={handleNameEdit} accessibilityRole="button">
+            <Ionicons name="pencil-outline" size={16} color={colors.text} />
+            <Typography variant="caption" style={styles.bold}>Edit name</Typography>
+          </TouchableOpacity>}
+        </View>
+
+        <View style={styles.section}>
+          <SectionLabel>{ACC.SECURITY.TITLE}</SectionLabel>
+          <View style={styles.listCard}>
+            <Row Icon={ShieldIcon} iconBg={colors.primary.lightest} iconColor={colors.text} label="Two-factor authentication"
+              subtitle={twoFAEnabled ? ACC.SECURITY.TWO_FA.ENABLED_DESC : ACC.SECURITY.TWO_FA.DISABLED_DESC}
+              right={<Switch value={twoFAEnabled} onValueChange={handleTwoFAToggle} accessibilityLabel="Two-factor authentication" trackColor={{ false: colors.border, true: colors.primary.base }} thumbColor={colors.surface} ios_backgroundColor={colors.border} />} />
+            {(isLoadingBiometrics || biometricsAvailable) && <Row Icon={FingerprintIcon} divider label={biometricTypeName + ' login'}
+              subtitle={isLoadingBiometrics ? 'Checking availability...' : biometricsEnabled ? 'Enabled' : 'Disabled'}
+              right={isLoadingBiometrics ? <ActivityIndicator size="small" color={colors.navBarBackground} />
+                : <Switch value={biometricsEnabled} onValueChange={handleBiometricToggle} accessibilityLabel={biometricTypeName + ' login'} trackColor={{ false: colors.border, true: colors.primary.base }} thumbColor={colors.surface} ios_backgroundColor={colors.border} />} />}
+            <Row Icon={KeyIcon} divider label={ACC.SECURITY.PASSWORD.LABEL}
+              subtitle={ACC.SECURITY.PASSWORD.LAST_CHANGED_PREFIX + ' ' + formatRelativeTime(user?.password_changed_at || user?.date_joined)} onPress={handlePasswordPress} />
+            <Row Icon={QuestionIcon} divider label={ACC.SECURITY.LINKED_DEVICES.LABEL}
+              subtitle={'0 ' + ACC.SECURITY.LINKED_DEVICES.ACTIVE_SESSIONS_SUFFIX} onPress={comingSoon('Linked devices')} />
+          </View>
+        </View>
+
+        {memberships.length > 0 && <View style={styles.section}>
+          <SectionLabel>{ACC.MEMBERSHIPS.TITLE}</SectionLabel>
+          <View style={styles.listCard}>
+            {memberships.map((home, index) => <Row key={home.id} Icon={HomeIcon} iconBg={colors.primary.lightest} iconColor={colors.text} image={home.photo} divider={index > 0}
+              label={home.name} onPress={() => navigateToHome(home.id)}
+              right={<View style={styles.membershipRight}><View style={styles.roleBadge}><Typography variant="caption" style={styles.roleLabel}>{home.role === 'ADMIN' ? ACC.MEMBERSHIPS.ROLE_ADMIN : ACC.MEMBERSHIPS.ROLE_GUEST}</Typography></View><Ionicons name="chevron-forward" size={18} color={colors.notactiveicon} /></View>} />)}
+          </View>
+        </View>}
+
+        <View style={styles.section}>
+          <SectionLabel>{ACC.PREFERENCES.TITLE}</SectionLabel>
+          <View style={styles.listCard}>
+            <Row Icon={ColorPaletteIcon} label={ACC.PREFERENCES.THEME.LABEL} subtitle={themeSubtitle} onPress={comingSoon('Theme settings')} />
+            <Row Icon={AlertIcon} divider label={ACC.PREFERENCES.NOTIFICATIONS.LABEL} subtitle={notificationsSubtitle} onPress={comingSoon('Notification settings')} />
+            <Row Icon={GlobalIcon} divider label={ACC.PREFERENCES.UNITS_LANGUAGE.LABEL} subtitle={unitsLanguageSubtitle} onPress={comingSoon('Units & language settings')} />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <SectionLabel>{ACC.EMERGENCY.TITLE}</SectionLabel>
+          <View style={styles.card}>
+            <Row Icon={TrustedPersonIcon} iconBg={colors.secondaryText} label={ACC.EMPTY_STATES.EMERGENCY_CONTACTS.TITLE} subtitle={ACC.EMPTY_STATES.EMERGENCY_CONTACTS.SUBTITLE} />
+            <TouchableOpacity style={styles.addTrusted} onPress={comingSoon('Emergency contacts')} accessibilityRole="button">
+              <Ionicons name="add" size={18} color={colors.text} />
+              <Typography variant="caption" style={styles.centerLabel}>{ACC.EMERGENCY.ADD_BUTTON}</Typography>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <SectionLabel>Account actions</SectionLabel>
+          <View style={styles.listCard}>
+            <Row label={ACC.ACTIONS.EXPORT_DATA} onPress={comingSoon('Data export')} right={<Ionicons name="download-outline" size={20} color={colors.secondaryText} />} />
+            <Row divider label="Log out" onPress={handleLogout} right={<Ionicons name="log-out-outline" size={20} color={colors.secondaryText} />} />
+            <Row divider label={ACC.ACTIONS.SIGN_OUT_ALL} onPress={handleSignOutAllDevices} right={<Ionicons name="phone-portrait-outline" size={20} color={colors.secondaryText} />} />
+          </View>
+          <TouchableOpacity style={styles.danger} onPress={() => router.push('/(profile actions)/enterpassword' as any)} accessibilityRole="button">
+            <Ionicons name="trash-outline" size={18} color={colors.error} />
+            <Typography variant="body" color={colors.error} style={styles.centerLabel}>{ACC.ACTIONS.DELETE_ACCOUNT}</Typography>
+          </TouchableOpacity>
         </View>
       </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.body}>
-          {/* Profile Info */}
-          <View style={styles.profileSection}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <TouchableOpacity style={styles.avatarWrapper} onPress={handlePictureEdit}>
-                {profileImage ? (
-                  <Image source={{ uri: profileImage }} style={styles.avatar} />
-                ) : (
-                  <View style={[styles.avatar, { backgroundColor: colors.primary.base, alignItems: 'center', justifyContent: 'center' }]}>
-                    <Typography variant="h3" color={colors.surface}>{displayName.charAt(0).toUpperCase()}</Typography>
-                  </View>
-                )}
-                <View style={styles.avatarEdit}>
-                  <EditingIcon width={16} height={16} color={colors.text} />
-                </View>
-              </TouchableOpacity>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Typography variant="h2" color={colors.text} style={{ fontSize: 20, fontWeight: '700', flex: 1 }}>{displayName}</Typography>
-                  <TouchableOpacity onPress={handleNameEdit} style={{ marginLeft: Spacing.xs }}>
-                    <EditingIcon width={16} height={16} color={colors.secondaryText} />
-                  </TouchableOpacity>
-                </View>
-                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs }}>
-                   <Typography variant="caption" color={colors.secondaryText} style={{ flex: 1 }}>{user?.email || ''}</Typography>
-                   {user?.email_verified && (
-                     <View style={styles.verifiedIcon}>
-                       <Typography variant="caption" color={colors.surface} style={{ fontSize: 10, fontWeight: 'bold' }}>✓</Typography>
-                     </View>
-                   )}
-                 </View>
-                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs }}>
-                   <Typography variant="caption" color={colors.secondaryText} style={{ flex: 1 }}>{user?.phone_number || ''}</Typography>
-                   <View style={styles.verifiedIcon}>
-                     <Typography variant="caption" color={colors.surface} style={{ fontSize: 10, fontWeight: 'bold' }}>✓</Typography>
-                   </View>
-                 </View>
-              </View>
-            </View>
-
-            {isEditingName && (
-              <View style={{ marginTop: Spacing.md }}>
-                <TextField 
-                  label={ACC.FIELDS.FIRST_NAME.LABEL} 
-                  value={firstName} 
-                  onChangeText={setFirstName} 
-                  placeholder={ACC.FIELDS.FIRST_NAME.PLACEHOLDER} 
-                />
-                <TextField 
-                  label={ACC.FIELDS.LAST_NAME.LABEL} 
-                  value={lastName} 
-                  onChangeText={setLastName} 
-                  placeholder={ACC.FIELDS.LAST_NAME.PLACEHOLDER} 
-                />
-                <View style={{ flexDirection: 'row', marginTop: Spacing.sm }}>
-                  <View style={{ flex: 1, marginRight: Spacing.xs }}>
-                    <AppButton 
-                      variant="secondaryLarge" 
-                      title={ACC.CTA.CANCEL} 
-                      onPress={handleNameCancel} 
-                      disabled={isSaving}
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: Spacing.xs }}>
-                    <AppButton 
-                      variant="primaryLarge" 
-                      title={ACC.CTA.SAVE} 
-                      onPress={handleNameSave} 
-                      disabled={isSaving}
-                    />
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
-
-          {/* Separator Line */}
-          <View style={styles.separator} />
-
-          {/* Account Security */}
-          <Typography variant="h2" color={colors.text} style={styles.sectionHeader}>{ACC.SECURITY.TITLE}</Typography>
-
-          {/* Two-Factor */}
-          <View style={styles.rowCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: Spacing.sm }}>
-              <View style={[styles.securityIcon, { backgroundColor: colors.primary.base }] }>
-                <ShieldIcon width={20} height={20} color={colors.text} />
-              </View>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{ACC.SECURITY.TWO_FA.LABEL}</Typography>
-                <Typography variant="caption" color={colors.primary.darker}>{twoFAEnabled ? ACC.SECURITY.TWO_FA.ENABLED_DESC : ACC.SECURITY.TWO_FA.DISABLED_DESC}</Typography>
-              </View>
-            </View>
-            <View style={{ flexShrink: 0 }}>
-              <LabeledToggle label="" value={twoFAEnabled} onValueChange={handleTwoFAToggle} variant="success" />
-            </View>
-          </View>
-
-          {/* Biometric Login - Show loading state or the actual card */}
-          {isLoadingBiometrics ? (
-            <View style={styles.rowCard}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: Spacing.sm }}>
-                <View style={[styles.securityIcon, { backgroundColor: colors.border }]}>
-                  <ActivityIndicator size="small" color={colors.secondaryText} />
-                </View>
-                <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                  <View style={{ height: 16, width: '60%', backgroundColor: colors.border, borderRadius: 4, marginBottom: 4 }} />
-                  <View style={{ height: 12, width: '80%', backgroundColor: colors.border, borderRadius: 4 }} />
-                </View>
-              </View>
-            </View>
-          ) : biometricsAvailable ? (
-            <View style={styles.rowCard}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: Spacing.sm }}>
-                <View style={[styles.securityIcon, { backgroundColor: colors.secondary.base }] }>
-                  <FingerprintIcon width={20} height={20} color={colors.surface} />
-                </View>
-                <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                  <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{biometricTypeName} Login</Typography>
-                  <Typography variant="caption" color={biometricsEnabled ? colors.primary.darker : colors.secondaryText}>
-                    {biometricsEnabled ? `${biometricTypeName} login is enabled` : `Use ${biometricTypeName} for quick login`}
-                  </Typography>
-                </View>
-              </View>
-              <View style={{ flexShrink: 0 }}>
-                <LabeledToggle label="" value={biometricsEnabled} onValueChange={handleBiometricToggle} variant="success" />
-              </View>
-            </View>
-          ) : null}
-
-          {/* Password */}
-          <TouchableOpacity style={styles.rowCard} onPress={handlePasswordPress} accessibilityRole="button">
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View style={[styles.securityIcon, { backgroundColor: colors.navBarBackground }] }>
-                <KeyIcon width={20} height={20} color={colors.surface} />
-              </View>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{ACC.SECURITY.PASSWORD.LABEL}</Typography>
-                <Typography variant="caption" color={colors.secondaryText}>{ACC.SECURITY.PASSWORD.LAST_CHANGED_PREFIX} {formatRelativeTime(user?.password_changed_at || user?.date_joined)}</Typography>
-              </View>
-            </View>
-            <BackArrow width={18} height={18} color={colors.secondaryText} style={{ transform: [{ rotate: '180deg' }] }} />
-          </TouchableOpacity>
-
-          {/* Linked Devices */}
-          <TouchableOpacity style={styles.rowCard} disabled>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View style={[styles.securityIcon, { backgroundColor: colors.navBarBackground }] }>
-                <QuestionIcon width={20} height={20} color={colors.surface} />
-              </View>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{ACC.SECURITY.LINKED_DEVICES.LABEL}</Typography>
-                <Typography variant="caption" color={colors.secondaryText}>{`0 ${ACC.SECURITY.LINKED_DEVICES.ACTIVE_SESSIONS_SUFFIX}`}</Typography>
-              </View>
-            </View>
-            <BackArrow width={18} height={18} color={colors.secondaryText} style={{ transform: [{ rotate: '180deg' }] }} />
-          </TouchableOpacity>
-
-          {/* Home Memberships */}
-          <Typography variant="h2" color={colors.text} style={styles.membershipsHeader}>{ACC.MEMBERSHIPS.TITLE}</Typography>
-          {memberships.map((home) => (
-            <TouchableOpacity key={home.id} style={styles.membershipCard} onPress={() => navigateToHome(home.id)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                {home.photo ? (
-                  <Image source={{ uri: home.photo }} style={{ width: 36, height: 36, borderRadius: 18 }} />
-                ) : (
-                  <View style={[styles.securityIcon, { backgroundColor: colors.primary.base }] }>
-                    <HomeIcon width={20} height={20} color={colors.text} />
-                  </View>
-                )}
-                <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                  <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{home.name}</Typography>
-                  <Typography variant="caption" color={colors.secondaryText}>{home.role === 'ADMIN' ? ACC.MEMBERSHIPS.ROLE_ADMIN : ACC.MEMBERSHIPS.ROLE_GUEST}</Typography>
-                </View>
-              </View>
-              <BackArrow width={18} height={18} color={colors.secondaryText} style={{ transform: [{ rotate: '180deg' }] }} />
-            </TouchableOpacity>
-          ))}
-
-          {/* Preferences */}
-          <Typography variant="h2" color={colors.text} style={styles.preferencesHeader}>{ACC.PREFERENCES.TITLE}</Typography>
-
-          <TouchableOpacity style={styles.preferenceCard} onPress={() => { /* navigate later */ }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View style={[styles.securityIcon, { backgroundColor: colors.navBarBackground }]}>
-                <ColorPaletteIcon width={20} height={20} color={colors.surface} />
-              </View>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{ACC.PREFERENCES.THEME.LABEL}</Typography>
-                <Typography variant="caption" color={colors.secondaryText}>{themeSubtitle}</Typography>
-              </View>
-            </View>
-            <BackArrow width={18} height={18} color={colors.secondaryText} style={{ transform: [{ rotate: '180deg' }] }} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.preferenceCard} onPress={() => { /* navigate later */ }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View style={[styles.securityIcon, { backgroundColor: colors.navBarBackground }]}>
-                <AlertIcon width={20} height={20} color={colors.surface} />
-              </View>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{ACC.PREFERENCES.NOTIFICATIONS.LABEL}</Typography>
-                <Typography variant="caption" color={colors.secondaryText}>{notificationsSubtitle}</Typography>
-              </View>
-            </View>
-            <BackArrow width={18} height={18} color={colors.secondaryText} style={{ transform: [{ rotate: '180deg' }] }} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.preferenceCard} onPress={() => { /* navigate later */ }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View style={[styles.securityIcon, { backgroundColor: colors.navBarBackground }]}>
-                <GlobalIcon width={20} height={20} color={colors.surface} />
-              </View>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <Typography variant="body" color={colors.text} style={{ fontWeight: '600' }}>{ACC.PREFERENCES.UNITS_LANGUAGE.LABEL}</Typography>
-                <Typography variant="caption" color={colors.secondaryText}>{unitsLanguageSubtitle}</Typography>
-              </View>
-            </View>
-            <BackArrow width={18} height={18} color={colors.secondaryText} style={{ transform: [{ rotate: '180deg' }] }} />
-          </TouchableOpacity>
-
-          {/* Emergency Contacts */}
-          <Typography variant="h2" color={colors.text} style={styles.emergencyHeader}>{ACC.EMERGENCY.TITLE}</Typography>
-
-          {/* Empty state - will be populated from backend later */}
-          <View style={styles.emergencyCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View style={[styles.securityIcon, { backgroundColor: colors.secondaryText }]}> 
-                <TrustedPersonIcon width={20} height={20} color={colors.surface} />
-              </View>
-              <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
-                <Typography variant="body" color={colors.secondaryText} style={{ fontStyle: 'italic' }}>
-                  {ACC.EMPTY_STATES.EMERGENCY_CONTACTS.TITLE}
-                </Typography>
-                <Typography variant="caption" color={colors.secondaryText}>
-                  {ACC.EMPTY_STATES.EMERGENCY_CONTACTS.SUBTITLE}
-                </Typography>
-              </View>
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.addTrustedButton} onPress={() => { /* navigate later */ }}>
-            <Typography variant="body" color={colors.text}>+ {ACC.EMERGENCY.ADD_BUTTON}</Typography>
-          </TouchableOpacity>
-
-          {/* Actions */}
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary.base }]} onPress={() => { /* navigate later */ }}>
-            <Typography variant="body" color={colors.text} style={{ fontWeight: '700', textAlign: 'center' }}>{ACC.ACTIONS.EXPORT_DATA}</Typography>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton} onPress={handleLogout}>
-            <Typography variant="body" color={colors.text} style={{ fontWeight: '600', textAlign: 'center' }}>{ACC.ACTIONS.LOGOUT}</Typography>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton} onPress={handleSignOutAllDevices}>
-            <Typography variant="body" color={colors.text} style={{ fontWeight: '600', textAlign: 'center' }}>{ACC.ACTIONS.SIGN_OUT_ALL}</Typography>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#EF4444' }]} onPress={() => router.push('/(profile actions)/enterpassword' as any)}>
-            <Typography variant="body" color={colors.surface} style={{ fontWeight: '700', textAlign: 'center' }}>{ACC.ACTIONS.DELETE_ACCOUNT}</Typography>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
+    </LockSubpage>
   );
 };
 
-const styles = {
-  container: {
-    flex: 1,
-    backgroundColor: colors.navBarBackground,
-  },
-  header: {
-    backgroundColor: colors.navBarBackground,
-    height: 120,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.xxl,
-  },
-  headerLeft: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-  },
-  backButton: { padding: Spacing.xs, marginRight: Spacing.xs },
-  headerTitle: { textAlign: 'left' as const, fontSize: 18, fontWeight: '600' as const },
-  content: { flex: 1, backgroundColor: colors.background },
-  body: { padding: Spacing.lg, paddingTop: Spacing.xs, paddingBottom: Spacing.xxl },
-  profileSection: {
-    paddingVertical: Spacing.md,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: Spacing.sm,
-  },
-  verifiedIcon: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.success,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    marginLeft: Spacing.xs,
-  },
-  avatarWrapper: { position: 'relative' as const },
+const styles = StyleSheet.create({
+  content: { width: '100%', maxWidth: 640, alignSelf: 'center', gap: 24, paddingBottom: 20 },
+  section: { gap: 10 },
+  sectionLabel: { fontSize: 11, lineHeight: 16, letterSpacing: 1.1, fontWeight: '600', marginLeft: 4 },
+  card: { padding: 18, gap: 16, borderRadius: 22, borderWidth: 1, borderColor: '#E8ECF1', backgroundColor: colors.surface },
+  listCard: { paddingHorizontal: 16, borderRadius: 22, borderWidth: 1, borderColor: '#E8ECF1', backgroundColor: colors.surface },
+  bold: { fontWeight: '600' },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  avatarButton: { flexShrink: 0 },
   avatar: { width: 64, height: 64, borderRadius: 32 },
-  avatarEdit: {
-    position: 'absolute' as const,
-    bottom: -2,
-    right: -2,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.primary.base,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderWidth: 2,
-    borderColor: colors.surface,
-  },
-  securityCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  rowCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: Spacing.sm,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-  },
-  securityIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: `${colors.primary.base}33`,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  sectionHeader: {
-    marginTop: Spacing.xs - 12,
-    marginBottom: Spacing.xs,
-    fontSize: 18,
-  },
-  membershipsHeader: {
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xs - 5,
-    fontSize: 18,
-  },
-  membershipCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: Spacing.sm,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-  },
-  preferencesHeader: {
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xs - 5,
-    fontSize: 18,
-  },
-  preferenceCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: Spacing.sm,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-  },
-  emergencyHeader: {
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xs -5,
-    fontSize: 18,
-  },
-  emergencyCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: Spacing.sm,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-  },
-  addTrustedButton: {
-    backgroundColor: colors.border,
-    borderRadius: 20,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  actionButton: {
-    backgroundColor: colors.border,
-    borderRadius: 20,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    marginTop: Spacing.sm,
-  },
-};
+  avatarFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary.base },
+  avatarEdit: { position: 'absolute', right: -2, bottom: -2, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary.base, borderWidth: 2, borderColor: colors.surface },
+  profileCopy: { flex: 1, minWidth: 0, gap: 5 },
+  profileName: { fontSize: 20, lineHeight: 26 },
+  contact: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  contactText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 18 },
+  editName: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 11, borderRadius: 12, backgroundColor: colors.iconBackground },
+  dividerLine: { height: 1, backgroundColor: '#EEF0F3' },
+  buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  buttonCell: { flex: 1, minWidth: 112 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 74, paddingVertical: 16 },
+  divider: { borderTopWidth: 1, borderTopColor: '#EEF0F3' },
+  rowIcon: { width: 38, height: 38, borderRadius: 13, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  rowCopy: { flex: 1, minWidth: 0, gap: 4 },
+  rowLabel: { fontSize: 15, lineHeight: 21, fontWeight: '600' },
+  rowSubtitle: { fontSize: 12, lineHeight: 18 },
+  rowAccessory: { flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  membershipRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  roleBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12, backgroundColor: colors.primary.lightest },
+  roleLabel: { fontSize: 11, lineHeight: 16, fontWeight: '600' },
+  addTrusted: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#D5DBE3' },
+  centerLabel: { flexShrink: 1, fontWeight: '600', textAlign: 'center' },
+  danger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16, paddingHorizontal: 16, borderRadius: 16, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.lightPink },
+});
 
 export default AccountSettings;

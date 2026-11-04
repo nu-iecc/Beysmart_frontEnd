@@ -1,3 +1,4 @@
+import AuthScreen from '@/components/AuthScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -27,10 +28,10 @@ export default function EmailLoginScreen() {
 
   const handleLogin = async () => {
     if (!canContinue) return;
-    
+
     setIsLoading(true);
     setError('');
-    
+
     try {
       const loginData: LoginRequest = {
         email: email.trim(),
@@ -57,14 +58,14 @@ export default function EmailLoginScreen() {
           // Fallback: store minimal user data with email
           await AsyncStorage.setItem('userData', JSON.stringify({ email: email.trim() }));
         }
-        
+
         // Reset biometric attempts counter on successful login
         await biometricsService.resetBiometricAttempts();
-        
+
         // Check if this is the first login and if device supports biometrics
         const isFirstLogin = await biometricsService.isFirstLogin();
         const canSetupBiometrics = await biometricsService.canSetupBiometrics();
-        
+
         if (isFirstLogin && canSetupBiometrics) {
           // Show biometric setup modal instead of navigating immediately
           setPendingNavigation(true);
@@ -117,8 +118,8 @@ export default function EmailLoginScreen() {
     }
   };
 
-  return (
-    <View style={styles.container}>
+  return ((
+    <AuthScreen><View style={styles.container}>
       {/* Header */}
       <View style={styles.headerRow}>
         <AppButton
@@ -191,45 +192,45 @@ export default function EmailLoginScreen() {
       </View>
 
       {/* Forgot password */}
-      <TouchableOpacity onPress={() => {
-        router.push('./resetpassword');
-      }}>
+      <TouchableOpacity onPress={() => router.push('./resetpassword')}>
         <View style={styles.forgotPassword}>
           <Typography variant="caption" color={colors.secondaryText}>
             {LOGIN_STRINGS.emailLogin.actions.forgotPassword}
           </Typography>
         </View>
       </TouchableOpacity>
-
-      {/* Biometric Setup Modal */}
-      <BiometricSetupModal
+    </View><BiometricSetupModal
         visible={showBiometricModal}
         onClose={handleBiometricClose}
         onEnable={handleBiometricEnable}
         onSkip={handleBiometricSkip}
         phoneNumber={email}
-      />
-    </View>
-  );
+      /></AuthScreen>
+  ));
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: colors.background,
     padding: Grid.gutterWidth,
     ...Padding.screenHorizontal,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    paddingBottom: Spacing.lg,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   heroIcon: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
     width: '100%',
   },
   heroDot: {
@@ -242,7 +243,8 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: 'center',
-    marginTop: Grid.rowGap,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   title: {
     textAlign: 'center',

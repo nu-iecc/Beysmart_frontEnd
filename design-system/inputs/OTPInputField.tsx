@@ -3,6 +3,7 @@ import { TextInput, View } from 'react-native';
 import { colors } from '../colors/colors';
 import { Spacing } from '../Layout/spacing';
 import { Typography } from '../typography/typography';
+import { fonts } from '../typography/fonts';
 
 interface OTPInputFieldProps {
   length: number;
@@ -47,7 +48,7 @@ const OTPInputField: React.FC<OTPInputFieldProps> = ({
 
     // Only allow single digits
     const digit = text.slice(-1).replace(/[^0-9]/g, '');
-    
+
     if (digit) {
       const newValue = [...value];
       newValue[index] = digit;
@@ -117,6 +118,7 @@ const OTPInputField: React.FC<OTPInputFieldProps> = ({
                 height: '100%',
                 textAlign: 'center',
                 fontSize: 24,
+                fontFamily: fonts.family.bold,
                 fontWeight: '700',
                 color: colors.text,
                 borderWidth: 0,
@@ -126,7 +128,7 @@ const OTPInputField: React.FC<OTPInputFieldProps> = ({
            </View>
          ))}
       </View>
-      
+
       {/* Helper text for states */}
       {error && (
         <Typography variant="caption" color={colors.error} style={{
@@ -136,7 +138,7 @@ const OTPInputField: React.FC<OTPInputFieldProps> = ({
           Please enter the complete verification code
         </Typography>
       )}
-      
+
       {success && (
         <Typography variant="caption" color={colors.success} style={{
           marginTop: Spacing.sm,

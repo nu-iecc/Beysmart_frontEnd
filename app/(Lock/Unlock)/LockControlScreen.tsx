@@ -1,3 +1,9 @@
+import LockLoader from '@/components/LockLoader';
+import LockMotion from '@/components/LockMotion';
+import ConnectionMotion from '@/components/ConnectionMotion';
+import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '@/components/PageHeader';
+import { ScrollView, StyleSheet } from 'react-native';
 import { getMediaUrl } from '@/constants/api';
 import { colors } from '@/design-system/colors/colors';
 import { BackArrow } from '@/design-system/icons';
@@ -25,7 +31,7 @@ import {
 import { BottomNavigation } from '@/design-system/Navigation/BottomNavigation';
 import { Typography } from '@/design-system/typography/typography';
 import { LockingProcessState, LockPosition, smartLockService } from '@/src/ble';
-import { isBluetoothEnabled } from '@/src/ble/bluetoothmanager';
+import { getConnectedDevice, isBluetoothEnabled } from '@/src/ble/bluetoothmanager';
 import apiClient from '@/utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -60,20 +66,23 @@ const LockControlScreen: React.FC = () => {
   const homeName = params.homeName as string;
   const deviceId = params.deviceId as string;
   const bleDeviceId = params.bleDeviceId as string; // BLE MAC address for direct connection
+  const role = params.role === 'owner' || params.role === 'guest' ? params.role : undefined;
 
   // State
   const [isLocked, setIsLocked] = useState<boolean | null>(null); // null = not loaded yet
-  const [isConnected, setIsConnected] = useState<boolean>(smartLockService.isConnected());
+  const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isLoadingState, setIsLoadingState] = useState(true);
   const [isHolding, setIsHolding] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [operationAction, setOperationAction] = useState<'lock' | 'unlock' | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [batteryLevel, setBatteryLevel] = useState(100);
   const [isDoorClosed, setIsDoorClosed] = useState(true);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [showBluetoothModal, setShowBluetoothModal] = useState(false);
   const [deviceBleId, setDeviceBleId] = useState<string | null>(bleDeviceId || null); // Store BLE ID from DB
+  const [isBleIdLoaded, setIsBleIdLoaded] = useState(false);
 
   // Animation values
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -84,7 +93,7 @@ const LockControlScreen: React.FC = () => {
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLockedRef = useRef<boolean | null>(null);
   const isMountedGlobal = useRef(true); // Global mounted flag to prevent state updates after unmount
-  
+
   // Track pending lock action for activity logging
   // We only log success when lockPositionChanged confirms the actual state change
   const pendingActionRef = useRef<{ action: 'lock' | 'unlock'; preActionLocked: boolean } | null>(null);
@@ -111,7 +120,7 @@ const LockControlScreen: React.FC = () => {
         access_method: accessMethod,
         ...(description && { description }),
       };
-      
+
       console.log(`📝 Logging ${action} activity to backend...`, body);
       const response = await apiClient.post(endpoint, body);
       console.log(`✅ Activity logged:`, response.data);
@@ -149,15 +158,15 @@ const LockControlScreen: React.FC = () => {
   useEffect(() => {
     return () => {
       console.log('🧹 Component unmounting, cleaning up...');
-      
+
       // Clear any pending timers
       if (holdTimer.current) {
         clearTimeout(holdTimer.current);
         holdTimer.current = null;
       }
-      
+
       // Disconnect from device
-      if (smartLockService.isConnected()) {
+      if (smartLockService.isConnected() && getConnectedDevice()?.id === deviceBleId) {
         console.log('🔌 Disconnecting from device on unmount...');
         smartLockService.disconnect().catch((error) => {
           console.error('❌ Error disconnecting on unmount:', error);
@@ -172,7 +181,7 @@ const LockControlScreen: React.FC = () => {
       if (Platform.OS === 'android') {
         try {
           const androidVersion = Platform.Version;
-          
+
           if (androidVersion >= 31) {
             // Android 12+ (API 31+) - Request new Bluetooth permissions
             const granted = await PermissionsAndroid.requestMultiple([
@@ -225,45 +234,41 @@ const LockControlScreen: React.FC = () => {
     requestBluetoothPermissions();
   }, []);
 
-  // Fetch device BLE ID from API if not in params
+  // Use the BLE ID from params, or fetch it from the API.
   useEffect(() => {
+    let active = true;
+    setIsBleIdLoaded(false);
     const fetchDeviceBleId = async () => {
-      // If we already have BLE ID from params, no need to fetch
-      if (deviceBleId) {
-        console.log('✅ Using BLE device ID from params:', deviceBleId);
-        return;
-      }
-
-      // If no deviceId to query with, skip
-      if (!deviceId) {
-        console.warn('⚠️ No deviceId available to fetch BLE ID');
-        return;
-      }
-
       try {
+        if (bleDeviceId) {
+          if (active) setDeviceBleId(bleDeviceId);
+          return;
+        }
+        if (!deviceId) {
+          if (active) setDeviceBleId(null);
+          return;
+        }
         console.log('📡 Fetching device details from API for deviceId:', deviceId);
         const response = await apiClient.get(`home/devices/${deviceId}/`);
         const deviceData = response.data;
-
-        if (deviceData.ble_device_id) {
-          console.log('✅ Retrieved BLE device ID from API:', deviceData.ble_device_id);
-          setDeviceBleId(deviceData.ble_device_id);
-        } else {
-          console.warn('⚠️ Device exists but has no ble_device_id field in database');
-        }
+        if (active) setDeviceBleId(deviceData.ble_device_id || null);
       } catch (error: any) {
         console.error('❌ Failed to fetch device BLE ID:', error.message);
+      } finally {
+        if (active) setIsBleIdLoaded(true);
       }
     };
 
-    fetchDeviceBleId();
-  }, [deviceId, deviceBleId]);
+    void fetchDeviceBleId();
+    return () => { active = false; };
+  }, [deviceId, bleDeviceId]);
 
   // Auto-connect to device on mount
   useEffect(() => {
     let isMounted = true;
 
     const autoConnectToDevice = async () => {
+      if (!isBleIdLoaded) return;
       // If we don't have BLE ID yet but we have deviceId, wait for API fetch to complete
       if (!deviceBleId && deviceId && !bleDeviceId) {
         console.log('⏳ Waiting for BLE device ID to be fetched from API...');
@@ -274,13 +279,13 @@ const LockControlScreen: React.FC = () => {
       if (smartLockService.isConnected()) {
         console.log('✅ Already connected to device');
         setIsConnected(true);
-        
+
         // Always set up lock position subscriptions when coming to lock screen
         // This is safe to call even if some subscriptions exist (e.g., from calibration)
         // The method clears existing subscriptions first to avoid duplicates
         console.log('🔔 Setting up lock position subscriptions...');
         await smartLockService.setupStateSubscriptions();
-        
+
         // Still need to read initial state since we just arrived at this screen
         console.log('📖 Reading current lock state...');
         try {
@@ -314,11 +319,12 @@ const LockControlScreen: React.FC = () => {
           setIsConnecting(false);
           return;
         }
-        
+
         // Connect directly using BLE device ID (MAC address)
         console.log('📡 Connecting to device using BLE ID:', deviceBleId);
+        if (smartLockService.isConnected()) await smartLockService.disconnect();
         const connected = await smartLockService.connect(deviceBleId);
-        
+
         if (connected && isMounted) {
           console.log('✅ Auto-connected successfully');
           setIsConnected(true);
@@ -353,8 +359,15 @@ const LockControlScreen: React.FC = () => {
     // Cleanup: disconnect when leaving the screen
     return () => {
       isMounted = false;
+    };
+  }, [deviceName, bleDeviceId, deviceBleId, deviceId, isBleIdLoaded]);
+
+  // Resolving a new local address must not trigger screen-unmount cleanup.
+  useEffect(() => {
+    isMountedGlobal.current = true;
+    return () => {
       isMountedGlobal.current = false; // Prevent any state updates after unmount
-      
+
       // Disconnect from device when unmounting
       if (smartLockService.isConnected()) {
         console.log('🔌 Disconnecting from device (screen unmount)...');
@@ -363,7 +376,7 @@ const LockControlScreen: React.FC = () => {
         });
       }
     };
-  }, [deviceName, bleDeviceId, deviceBleId, deviceId]);
+  }, []);
 
   // Monitor BLE connection state and auto-retry on disconnect
   useEffect(() => {
@@ -382,7 +395,7 @@ const LockControlScreen: React.FC = () => {
         if (deviceBleId) {
           console.log('📡 Reconnecting using BLE ID:', deviceBleId);
           const connected = await smartLockService.connect(deviceBleId);
-          
+
           if (connected && isMounted) {
             console.log('✅ Reconnected successfully using BLE ID');
             setIsConnected(true);
@@ -405,7 +418,9 @@ const LockControlScreen: React.FC = () => {
 
     const updateConnectionState = () => {
       if (isMounted) {
-        const connected = smartLockService.isConnected();
+        const connected = !!deviceBleId
+          && getConnectedDevice()?.id === deviceBleId
+          && smartLockService.isConnected();
         const wasConnected = isConnected;
         setIsConnected(connected);
 
@@ -434,7 +449,7 @@ const LockControlScreen: React.FC = () => {
       unsubDisconnected();
       unsubError();
     };
-  }, [isConnected, isConnecting, reconnectAttempts]); // Removed deviceName - it's from route params and won't change
+  }, [isConnected, isConnecting, reconnectAttempts, deviceBleId]);
 
   // Listen to lock state changes from device
   useEffect(() => {
@@ -446,7 +461,7 @@ const LockControlScreen: React.FC = () => {
         const state = data.state;
         // Consider both CLP (2) and JLP (4) as LOCKED
         // Consider both CULP (3) and JULP (5) as UNLOCKED
-        const locked = state.lockPosition === LockPosition.CLOSED_LOCKED_POSITION || 
+        const locked = state.lockPosition === LockPosition.CLOSED_LOCKED_POSITION ||
                       state.lockPosition === LockPosition.JAMMED_LOCKED_POSITION;
         setIsLocked(locked);
         isLockedRef.current = locked;
@@ -463,21 +478,21 @@ const LockControlScreen: React.FC = () => {
         const position = data.lockPosition;
         // CLP (2) or JLP (4) = LOCKED
         // CULP (3) or JULP (5) = UNLOCKED
-        const locked = position === LockPosition.CLOSED_LOCKED_POSITION || 
+        const locked = position === LockPosition.CLOSED_LOCKED_POSITION ||
                       position === LockPosition.JAMMED_LOCKED_POSITION;
-        
+
         console.log('🔒 Lock position changed:', locked ? 'LOCKED' : 'UNLOCKED', `(value: ${position})`);
-        
+
         // Check if we have a pending action to log
         const pending = pendingActionRef.current;
         if (pending) {
           const expectedLocked = pending.action === 'lock';
           const stateActuallyChanged = locked !== pending.preActionLocked;
           const changedToExpectedState = locked === expectedLocked;
-          
+
           console.log(`📝 Pending action: ${pending.action}, pre-state: ${pending.preActionLocked ? 'LOCKED' : 'UNLOCKED'}, current: ${locked ? 'LOCKED' : 'UNLOCKED'}`);
           console.log(`📝 State changed: ${stateActuallyChanged}, changed to expected: ${changedToExpectedState}`);
-          
+
           if (stateActuallyChanged && changedToExpectedState) {
             // SUCCESS: Lock actually changed to the expected state
             console.log(`✅ Lock actually ${pending.action}ed - logging success`);
@@ -488,11 +503,11 @@ const LockControlScreen: React.FC = () => {
             logLockActivity('log_failed_attempt', 'bluetooth', `Attempted to ${pending.action} but lock state remained ${locked ? 'locked' : 'unlocked'}`);
           }
           // Note: If state changed but not to expected (weird edge case), we don't log
-          
+
           // Clear pending action
           pendingActionRef.current = null;
         }
-        
+
         // Update both state and ref immediately
         setIsLocked(locked);
         isLockedRef.current = locked;
@@ -505,9 +520,9 @@ const LockControlScreen: React.FC = () => {
     const unsubLockProcess = smartLockService.on('lockingProcessStateChanged', (data) => {
       if (isMounted) {
         console.log('🔄 Locking process state:', data.state, '(2=SUCCESS, 3=FAILED, 4=IN_PROGRESS)');
-        
+
         const pending = pendingActionRef.current;
-        
+
         if (data.state === LockingProcessState.SUCCESS && pending) {
           // SUCCESS notification received - the lock will change position
           console.log('✅ Lock operation SUCCESS notification received');
@@ -516,7 +531,7 @@ const LockControlScreen: React.FC = () => {
         } else if (data.state === LockingProcessState.FAILED) {
           console.log('❌ Lock operation FAILED notification received');
           setIsTransitioning(false);
-          
+
           // Log the failure immediately based on the status attribute
           if (pending) {
             logLockActivity('log_failed_attempt', 'bluetooth', `Lock ${pending.action} failed - device reported failure`);
@@ -628,6 +643,7 @@ const LockControlScreen: React.FC = () => {
   // Handle hold completion - send actual BLE command
   const handleHoldComplete = useCallback(async () => {
     setIsHolding(false);
+    setOperationAction(isLockedRef.current ? 'unlock' : 'lock');
     setIsTransitioning(true);
 
     // Reset progress
@@ -647,8 +663,8 @@ const LockControlScreen: React.FC = () => {
       const currentlyLocked = isLockedRef.current;
       const actionType = currentlyLocked ? 'unlock' : 'lock';
       console.log(`🔐 Current lock state (from ref): ${currentlyLocked ? 'LOCKED' : 'UNLOCKED'}, sending ${actionType.toUpperCase()} command`);
-      
-      const result = currentlyLocked 
+
+      const result = currentlyLocked
         ? await smartLockService.unlock()
         : await smartLockService.lock();
 
@@ -662,7 +678,7 @@ const LockControlScreen: React.FC = () => {
           action: actionType,
           preActionLocked: currentlyLocked ?? false,
         };
-        
+
         // State will be updated via lockingProcessStateChanged or lockPositionChanged events
       } else if (result === LockingProcessState.FAILED) {
         console.error('❌ Lock command write failed immediately');
@@ -683,36 +699,36 @@ const LockControlScreen: React.FC = () => {
 
   // Handle back navigation
   const isNavigatingBack = useRef(false);
-  
+
   const handleBack = async () => {
     // Prevent multiple calls
     if (isNavigatingBack.current) {
       console.log('⚠️ Back navigation already in progress, ignoring...');
       return;
     }
-    
+
     isNavigatingBack.current = true;
     isMountedGlobal.current = false; // Prevent any state updates during navigation
-    
+
     try {
       console.log('🔙 Back button pressed, cleaning up...');
-      
+
       // Clear any pending timers
       if (holdTimer.current) {
         clearTimeout(holdTimer.current);
         holdTimer.current = null;
       }
-      
+
       // Disconnect from device if connected
       if (smartLockService.isConnected()) {
         console.log('🔌 Disconnecting from device...');
         await smartLockService.disconnect();
         console.log('✅ Disconnected successfully');
       }
-      
+
       // Small delay to ensure disconnect completes
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Navigate back
       router.back();
     } catch (error) {
@@ -726,7 +742,7 @@ const LockControlScreen: React.FC = () => {
   const handleTurnOnBluetooth = async () => {
     setShowBluetoothModal(false);
     console.log('🔵 Opening Bluetooth settings...');
-    
+
     // Open Bluetooth settings directly
     try {
       if (Platform.OS === 'ios') {
@@ -734,14 +750,14 @@ const LockControlScreen: React.FC = () => {
       } else {
         await Linking.sendIntent('android.settings.BLUETOOTH_SETTINGS');
       }
-      
+
       // Monitor for Bluetooth being enabled and auto-retry connection
       const checkInterval = setInterval(async () => {
         const btEnabled = await isBluetoothEnabled();
         if (btEnabled) {
           clearInterval(checkInterval);
           console.log('✅ Bluetooth enabled, retrying connection...');
-          
+
           if (deviceBleId) {
             setIsConnecting(true);
             try {
@@ -758,7 +774,7 @@ const LockControlScreen: React.FC = () => {
           }
         }
       }, 1000);
-      
+
       // Stop checking after 30 seconds
       setTimeout(() => clearInterval(checkInterval), 30000);
     } catch (error) {
@@ -773,7 +789,7 @@ const LockControlScreen: React.FC = () => {
   // Handle manual reconnect
   const handleReconnect = async () => {
     if (isConnecting) return;
-    
+
     if (!deviceBleId) {
       Alert.alert(
         'Connection Error',
@@ -791,7 +807,7 @@ const LockControlScreen: React.FC = () => {
       // Connect directly using BLE device ID
       console.log('📡 Manual reconnect using BLE ID:', deviceBleId);
       const connected = await smartLockService.connect(deviceBleId);
-      
+
       if (connected) {
         console.log('✅ Manually reconnected successfully');
         setIsConnected(true);
@@ -843,10 +859,10 @@ const LockControlScreen: React.FC = () => {
   };
 
   // Get current colors based on connection and lock state
-  const currentColors = !isConnected 
-    ? LockColors.disconnected 
-    : isLocked 
-      ? LockColors.locked 
+  const currentColors = !isConnected
+    ? LockColors.disconnected
+    : isLocked
+      ? LockColors.locked
       : LockColors.unlocked;
 
   // Interpolate progress for the ring
@@ -898,312 +914,151 @@ const LockControlScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* Header */}
-      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.navBarBackground }}>
-        <View
-          style={{
-            backgroundColor: colors.navBarBackground,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-            <TouchableOpacity
-              onPress={handleBack}
-              accessibilityLabel={LockControlConstants.backButtonAccessibilityLabel}
-              accessibilityHint={LockControlConstants.backButtonAccessibilityHint}
-              style={{ padding: Spacing.xs, marginRight: Spacing.sm }}
-            >
-              <BackArrow width={24} height={24} color={LockColors.header.icon} />
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Typography
-                variant="h3"
-                color={LockColors.header.text}
-                style={{ fontSize: 16, fontWeight: '600' }}
-              >
-                {deviceName} - {homeName}
-              </Typography>
+
+  const connected = isConnected;
+  const busy = isConnecting || isTransitioning || !isBleIdLoaded;
+  const lock = { name: deviceName || 'Lock' };
+  const loading = !isBleIdLoaded;
+  const unlocked = isConnected && isLocked === false;
+  const lockKnown = isConnected && !isLoadingState && isLocked !== null;
+  const isOwner = role !== 'guest';
+  const statusTitle = isConnecting ? 'Connecting…' : !isConnected ? 'Disconnected' : isTransitioning ? operationAction === 'lock' ? 'Locking…' : 'Unlocking…' : !lockKnown ? 'Reading lock…' : isLocked ? 'Locked' : 'Unlocked';
+  const statusHint = !isConnected ? 'Tap the lock to connect via Bluetooth' : isTransitioning ? 'Keep your phone close while the lock moves' : !lockKnown ? 'Reading the lock state' : isLocked ? LockControlConstants.holdToUnlock : LockControlConstants.holdToLock;
+  const pulseStyle = { transform: [{ scale: pulseAnim }] };
+  const onHeroPress = () => { if (!isConnected) void handleReconnect(); };
+  const disconnect = () => { void smartLockService.disconnect(); };
+  const connect = handleReconnect;
+  const battery = isConnected ? batteryLevel : null;
+  const error = '';
+  const openPage = (page: string) => {
+    if (page.endsWith('lock-settings')) handleSettings();
+    else if (page.endsWith('lock-activity')) handleActivityLog();
+    else handleInviteFamily();
+  };
+  const menuRow = (icon: React.ComponentProps<typeof Ionicons>['name'], title: string, description: string, onPress: () => void, last = false) => (
+    <TouchableOpacity style={[styles.menuRow, !last && styles.menuRowDivider]} accessibilityRole="button" disabled={busy} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.menuIcon}>
+        <Ionicons name={icon} size={20} color={colors.navBarBackground} />
+      </View>
+      <View style={styles.menuCopy}>
+        <Typography variant="body" style={styles.menuTitle}>{title}</Typography>
+        <Typography variant="caption" color={colors.disabled}>{description}</Typography>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#9AA4B2" />
+    </TouchableOpacity>
+  );
+const tile = (icon: React.ComponentProps<typeof Ionicons>['name'], title: string, description: string, tint: string, onPress: () => void) => (
+    <TouchableOpacity style={styles.tile} accessibilityRole="button" disabled={busy} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.tileTop}>
+        <View style={[styles.tileIcon, { backgroundColor: tint }]}>
+          <Ionicons name={icon} size={22} color={colors.navBarBackground} />
+        </View>
+        <Ionicons name="arrow-forward" size={16} color="#9AA4B2" style={styles.tileArrow} />
+      </View>
+      <Typography variant="body" style={styles.menuTitle}>{title}</Typography>
+      <Typography variant="caption" color={colors.disabled} numberOfLines={2}>{description}</Typography>
+    </TouchableOpacity>
+  );
+
+return ((<View style={styles.screen}>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.header}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back" disabled={busy} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={22} color={colors.surface} />
+          </TouchableOpacity>
+          <View style={styles.headerCopy}>
+            <Typography variant="h3" color={colors.surface} numberOfLines={1}>{lock?.name || 'Lock'}</Typography>
+            <View style={styles.homeRow}>
+              <Ionicons name="home-outline" size={12} color="#C7D0DD" />
+              <Typography variant="caption" color="#C7D0DD" numberOfLines={1} style={styles.homeLabel}>{homeName || 'Your smart lock'}</Typography>
             </View>
           </View>
+          {!!role && (
+            <View style={[styles.roleBadge, role === 'owner' && styles.roleBadgeOwner]}>
+              <Ionicons name={role === 'owner' ? 'key' : 'person'} size={12} color={role === 'owner' ? colors.text : colors.surface} />
+              <Typography variant="caption" color={role === 'owner' ? colors.text : colors.surface} style={styles.roleLabel}>
+                {role === 'owner' ? 'Owner' : 'Guest'}
+              </Typography>
+            </View>
+          )}
         </View>
-      </SafeAreaView>
 
-      {/* Status Icons Row - Below Header */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: Spacing.md,
-          paddingVertical: Spacing.sm,
-          backgroundColor: colors.background,
-        }}
-      >
-        {/* Battery indicator */}
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Battery width={20} height={14} color="#8B9A5B" />
-          <Typography
-            variant="caption"
-            color={colors.text}
-            style={{ marginLeft: 4, fontSize: 11 }}
-          >
-            {batteryLevel}%
-          </Typography>
-        </View>
-        {/* Bluetooth and WiFi */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: LockDimensions.statusIcon.spacing,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <BluetoothIcon
-              width={LockDimensions.statusIcon.size}
-              height={LockDimensions.statusIcon.size}
-              color={isConnecting ? colors.info : (isConnected ? colors.success : colors.error)}
-            />
-            <Typography
-              variant="caption"
-              color={isConnecting ? colors.info : (isConnected ? colors.success : colors.error)}
-              style={{ fontWeight: '600' }}
-            >
-              {isConnecting ? 'Connecting...' : (isConnected ? 'Connected' : 'Disconnected')}
-            </Typography>
-          </View>
-          <Wifi
-            width={LockDimensions.statusIcon.size}
-            height={LockDimensions.statusIcon.size}
-            color={colors.disabled}
-          />
-        </View>
-      </View>
-
-      {/* Main Content */}
-      <View style={{ flex: 1 }}>
-        {/* Lock Button Container */}
-        <View
-          style={{
-            alignItems: 'center',
-            paddingVertical: LockDimensions.lockContainer.paddingVertical,
-          }}
-        >
-          <TouchableWithoutFeedback
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            accessibilityLabel={LockControlConstants.lockButtonAccessibilityLabel}
-            accessibilityHint={LockControlConstants.lockButtonAccessibilityHint}
-          >
-            <Animated.View
-              style={{
-                width: LockAnimationConstants.OUTER_CIRCLE_SIZE,
-                height: LockAnimationConstants.OUTER_CIRCLE_SIZE,
-                alignItems: 'center',
-                justifyContent: 'center',
-                transform: [{ scale: Animated.multiply(scaleAnim, pulseAnim) }],
-              }}
-            >
-              {/* Progress Ring */}
-              <Svg
-                width={circleSize}
-                height={circleSize}
-                style={{ position: 'absolute' }}
-              >
-                {/* Background circle */}
-                <Circle
-                  cx={circleSize / 2}
-                  cy={circleSize / 2}
-                  r={radius}
-                  stroke={currentColors.background}
-                  strokeWidth={strokeWidth}
-                  fill="transparent"
-                  opacity={0.3}
-                />
-                {/* Progress circle */}
-                {isHolding && (
-                  <AnimatedCircle
-                    cx={circleSize / 2}
-                    cy={circleSize / 2}
-                    r={radius}
-                    stroke={colors.surface}
-                    strokeWidth={strokeWidth}
-                    fill="transparent"
-                    strokeDasharray={`${circumference} ${circumference}`}
-                    strokeDashoffset={strokeDashoffset}
-                    strokeLinecap="round"
-                    rotation="-90"
-                    origin={`${circleSize / 2}, ${circleSize / 2}`}
-                  />
-                )}
-              </Svg>
-
-              {/* Inner Circle with Lock State */}
-              <View
-                style={{
-                  width: LockAnimationConstants.INNER_CIRCLE_SIZE,
-                  height: LockAnimationConstants.INNER_CIRCLE_SIZE,
-                  borderRadius: LockAnimationConstants.INNER_CIRCLE_SIZE / 2,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: currentColors.background,
-                }}
-              >
-                {isConnected ? (
-                  <>
-                    {isLoadingState || isLocked === null ? (
-                      /* Loading state - show connecting/loading message */
-                      <Typography
-                        variant="h2"
-                        color={currentColors.text}
-                        style={{ fontSize: 18, fontWeight: '600' }}
-                      >
-                        Loading...
-                      </Typography>
-                    ) : (
-                      <>
-                        {/* Door and Lock Icons from Design System */}
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 8,
-                            marginBottom: 8,
-                          }}
-                        >
-                          {/* Door Icon - closed when locked, opened when unlocked */}
-                          {isLocked ? (
-                            <Door width={28} height={32} color={currentColors.text} />
-                          ) : (
-                            <OpenedDoor width={28} height={32} color={currentColors.text} />
-                          )}
-                          {/* Lock Icon - locked or unlocked */}
-                          {isLocked ? (
-                            <Locked width={24} height={28} color={currentColors.text} />
-                          ) : (
-                            <Unlocked width={24} height={28} color={currentColors.text} />
-                          )}
-                        </View>
-
-                        {/* Lock State Text */}
-                        <Typography
-                          variant="h2"
-                          color={currentColors.text}
-                          style={{ fontSize: 20, fontWeight: '600' }}
-                        >
-                          {isTransitioning
-                            ? isLocked
-                              ? LockControlConstants.unlocking
-                              : LockControlConstants.locking
-                            : isLocked
-                            ? LockControlConstants.locked
-                            : LockControlConstants.unlocked}
-                        </Typography>
-
-                        {/* Door State */}
-                        <Typography
-                          variant="caption"
-                          color={currentColors.text}
-                          style={{ marginTop: 4, opacity: 0.9 }}
-                        >
-                          {isDoorClosed ? LockControlConstants.doorClosed : LockControlConstants.doorOpen}
-                        </Typography>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  /* Disconnected State */
-                  <Typography
-                    variant="h2"
-                    color={currentColors.text}
-                    style={{ fontSize: 18, fontWeight: '600' }}
-                  >
-                    {LockControlConstants.disconnected}
-                  </Typography>
-                )}
-              </View>
-            </Animated.View>
-          </TouchableWithoutFeedback>
-
-          {/* Hold Instruction */}
-          <Typography
-            variant="caption"
-            color={colors.secondaryText}
-            style={{ marginTop: Spacing.lg, textAlign: 'center', paddingHorizontal: Spacing.xl }}
-          >
-            {!isConnected 
-              ? LockControlConstants.connectToUse
-              : isLocked 
-                ? LockControlConstants.holdToUnlock 
-                : LockControlConstants.holdToLock}
-          </Typography>
-
-          {/* Reconnect Button when disconnected */}
-          {(() => {
-            const shouldShow = !isConnected && !isConnecting;
-            console.log('🔘 Reconnect button visible?', shouldShow, '| isConnected:', isConnected, '| isConnecting:', isConnecting);
-            return shouldShow ? (
-              <TouchableOpacity
-                style={{
-                  marginTop: Spacing.lg,
-                  paddingVertical: Spacing.sm,
-                  paddingHorizontal: Spacing.xl,
-                  backgroundColor: colors.primary.base,
-                  borderRadius: 8,
-                }}
-                onPress={handleReconnect}
-              >
-                <Typography
-                  variant="body"
-                  color={colors.text}
-                  style={{ fontWeight: '600', textAlign: 'center' }}
-                >
-                  Reconnect
-                </Typography>
+        {lock && <>
+          <View style={styles.hero}>
+            <View style={styles.heroStage}>
+              <Animated.View pointerEvents="none" style={[styles.heroPulse, connected && styles.heroPulseConnected, pulseStyle]} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={connected ? (unlocked ? 'Lock' : 'Unlock') : 'Connect'}
+                disabled={busy || (connected && !lockKnown)} onPress={onHeroPress} onPressIn={handlePressIn} onPressOut={handlePressOut} activeOpacity={0.85}
+                style={[styles.heroRing, connected && styles.heroRingConnected]}>
+                <View style={[styles.heroButton, connected && styles.heroButtonConnected]}>
+                  {isConnecting ? <ConnectionMotion /> : connected
+                    ? <LockMotion locked={isLocked} active={isTransitioning} action={operationAction} holding={isHolding} holdProgress={progressAnim} />
+                    : <Ionicons name="bluetooth" size={52} color={colors.surface} />}
+                </View>
               </TouchableOpacity>
-            ) : null;
-          })()}
-        </View>
-
-        {/* Menu Items */}
-        <View style={{ backgroundColor: colors.surface, marginTop: Spacing.xl }}>
-          {/* Activity Log */}
-          <MenuItem
-            icon={<ActivityLog width={24} height={18} fill={LockColors.menu.icon} />}
-            label={LockControlConstants.activityLog}
-            onPress={handleActivityLog}
-            accessibilityLabel={LockControlConstants.activityLogAccessibilityLabel}
-            accessibilityHint={LockControlConstants.activityLogAccessibilityHint}
-          />
-
-          {/* Invite Family and Friends */}
-          <MenuItem
-            icon={<Invite width={24} height={20} color={LockColors.menu.icon} />}
-            label={LockControlConstants.inviteFamilyFriends}
-            onPress={handleInviteFamily}
-            accessibilityLabel={LockControlConstants.inviteFamilyAccessibilityLabel}
-            accessibilityHint={LockControlConstants.inviteFamilyAccessibilityHint}
-          />
-
-          {/* Settings */}
-          <MenuItem
-            icon={<SettingsIcon size={24} color={LockColors.menu.icon} />}
-            label={LockControlConstants.settings}
-            onPress={handleSettings}
-            accessibilityLabel={LockControlConstants.settingsAccessibilityLabel}
-            accessibilityHint={LockControlConstants.settingsAccessibilityHint}
-          />
-        </View>
+            </View>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, connected ? styles.statusDotConnected : styles.statusDotDisconnected]} />
+              <Typography variant="h2" color={colors.surface} style={styles.statusTitle} numberOfLines={1}>{statusTitle}</Typography>
+            </View>
+            <Typography variant="caption" color="#C7D0DD" style={styles.statusHint}>{statusHint}</Typography>
+            <TouchableOpacity style={[styles.linkButton, connected ? styles.disconnectButton : styles.connectButton]} accessibilityRole="button"
+              disabled={busy} onPress={connected ? disconnect : connect} activeOpacity={0.8}>
+              <Ionicons name={connected ? 'close-circle-outline' : 'bluetooth'} size={18} color={connected ? colors.surface : colors.text} />
+              <Typography variant="body" color={connected ? colors.surface : colors.text} style={styles.actionLabel}>
+                {connected ? 'Disconnect' : 'Connect'}
+              </Typography>
+            </TouchableOpacity>
+          </View>
+ <View style={styles.stats}>
+            {[
+              { icon: 'battery-half' as const, label: 'Battery', value: battery === null ? '--' : `${battery}%` },
+              { icon: 'bluetooth' as const, label: 'Bluetooth', value: connected ? 'On' : 'Off' },
+              { icon: 'home-outline' as const, label: 'Door', value: !connected ? '?' : isDoorClosed ? 'Closed' : 'Open' },
+            ].map(stat => <View key={stat.label} style={styles.stat}>
+              <Ionicons name={stat.icon} size={16} color={colors.primary.base} />
+              <Typography variant="body" color={colors.surface} style={styles.statValue}>{stat.value}</Typography>
+              <Typography variant="caption" color="#C7D0DD">{stat.label}</Typography>
+            </View>)}
+          </View>
+        </>}
       </View>
 
-      {/* Bluetooth Modal - Using calibration style */}
-      <Modal
+      <View style={styles.body}>
+      {loading ? <LockLoader style={{ marginTop: 40 }} label="Loading lock…" /> : <>
+        {lock && <>
+
+
+
+        <View style={styles.menuSection}>
+          <Typography variant="caption" color={colors.disabled} style={styles.sectionLabel}>QUICK ACCESS</Typography>
+          {isOwner && <View style={styles.tiles}>
+            {tile('people-outline', 'Invite', 'Share access with family & friends', colors.primary.lightest, () => openPage('/(app)/lock-invite'))}
+            {tile('settings-outline', 'Settings', 'Rename and manage this lock', '#F0F3F7', () => openPage('/(app)/lock-settings'))}
+          </View>}
+          <View style={styles.menuList}>
+            {menuRow('time-outline', 'Activity Log', 'Review recent lock activity', () => openPage('/(app)/lock-activity'), true)}
+          </View>
+        </View>
+      </>}
+      {!!error && <View style={[styles.message, styles.errorMessage]}>
+        <Ionicons name="alert-circle" size={18} color="#B42318" />
+        <Typography variant="caption" color="#B42318" style={{ flex: 1 }}>{error}</Typography>
+      </View>}
+
+    </>}
+      </View>
+    </ScrollView>
+    <BottomNavigation items={[
+      { key: 'home', label: 'Home', icon: null },
+      { key: 'devices', label: 'Devices', icon: null },
+      { key: 'energy', label: 'Energy', icon: null },
+      { key: 'profile', label: 'Profile', icon: null },
+    ]} activeKey="devices" onTabPress={key => {
+      if (!busy) router.replace({ pathname: '/(app)/home', params: { tab: key } });
+    }} />
+<Modal
         visible={showBluetoothModal}
         transparent={true}
         animationType="slide"
@@ -1257,32 +1112,65 @@ const LockControlScreen: React.FC = () => {
             </View>
           </View>
         </View>
-      </Modal>
-
-      {/* Bottom Navigation */}
-      <BottomNavigation
-        items={[
-          { key: 'home', label: 'Home', icon: null },
-          { key: 'devices', label: 'Devices', icon: null },
-          { key: 'energy', label: 'Energy', icon: null },
-          { key: 'profile', label: 'Profile', icon: null },
-        ]}
-        activeKey="devices"
-        profile_picture={user?.profile_picture}
-        onTabPress={(key: string) => {
-          if (key === 'home') {
-            router.push('/(app)/home');
-          } else if (key === 'devices') {
-            router.push('/(HomePage_actions)/MyDevices' as never);
-          } else if (key === 'energy') {
-            router.push('/(app)/home');
-          } else if (key === 'profile') {
-            router.push('/(profile actions)/Profile' as never);
-          }
-        }}
-      />
-    </View>
-  );
+      </Modal></View>));
 };
 
 export default LockControlScreen;
+
+
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#F3F5F8' },
+  scroll: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 24 },
+  header: { paddingHorizontal: 16, paddingTop: 54, paddingBottom: 18, gap: 16, backgroundColor: '#26364A', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backButton: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.11)' },
+  headerCopy: { flex: 1, minWidth: 0, gap: 3 },
+  homeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  homeLabel: { flexShrink: 1 },
+  roleBadge: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.13)' },
+  roleBadgeOwner: { backgroundColor: colors.primary.base },
+  roleLabel: { fontWeight: '600' },
+  hero: { alignItems: 'center', paddingTop: 4 },
+  heroStage: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
+  heroPulse: { position: 'absolute', width: 168, height: 168, borderRadius: 84, borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)' },
+  heroPulseConnected: { borderColor: colors.primary.base },
+  heroRing: { width: 168, height: 168, borderRadius: 84, padding: 14, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  heroRingConnected: { backgroundColor: 'rgba(207,255,94,0.14)', borderColor: 'rgba(207,255,94,0.4)' },
+  heroButton: { flex: 1, borderRadius: 70, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  heroButtonConnected: { backgroundColor: colors.primary.base },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: '100%' },
+  statusTitle: { flexShrink: 1, fontWeight: '700' },
+  statusHint: { marginTop: 4, textAlign: 'center' },
+  linkButton: { marginTop: 16, minHeight: 44, paddingHorizontal: 22, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  connectButton: { backgroundColor: colors.primary.base },
+  disconnectButton: { backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusDotConnected: { backgroundColor: colors.primary.base },
+  statusDotDisconnected: { backgroundColor: '#A2AAB5' },
+  stats: { flexDirection: 'row', gap: 8 },
+  stat: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)' },
+  statValue: { fontWeight: '600', marginTop: 2 },
+  body: { paddingHorizontal: 16, paddingTop: 18, gap: 16 },
+  actions: { flexDirection: 'row', gap: 12 },
+  actionButton: { flex: 1, minHeight: 50, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  actionPrimary: { backgroundColor: colors.primary.base },
+  actionSecondary: { backgroundColor: '#26364A' },
+  actionLabel: { fontWeight: '600' },
+  menuSection: { gap: 10 },
+  sectionLabel: { fontSize: 11, letterSpacing: 1.2, fontWeight: '600', marginLeft: 4 },
+  tiles: { flexDirection: 'row', gap: 12 },
+  tile: { flex: 1, minHeight: 132, padding: 14, gap: 4, borderRadius: 20, borderWidth: 1, borderColor: '#E8ECF1', backgroundColor: colors.surface },
+  tileTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
+  tileIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  tileArrow: { transform: [{ rotate: '-45deg' }] },
+  menuList: { borderRadius: 20, borderWidth: 1, borderColor: '#E8ECF1', backgroundColor: colors.surface, overflow: 'hidden' },
+  menuRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  menuRowDivider: { borderBottomWidth: 1, borderBottomColor: '#EEF0F3' },
+  menuIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F3F7' },
+  menuCopy: { flex: 1, gap: 3 },
+  menuTitle: { fontWeight: '600' },
+  message: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 14 },
+  errorMessage: { backgroundColor: '#FEF3F2' },
+});

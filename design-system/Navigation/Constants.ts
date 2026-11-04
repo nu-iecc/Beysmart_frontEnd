@@ -12,14 +12,14 @@ export const TOP_NAVIGATION = {
     ADD_NEW_HOME: 'Add New Home',
     ADD_HOME: 'Add Home',
   },
-  
+
   // Dimensions and spacing
   DIMENSIONS: {
     MIN_HEIGHT: 88,
     HOME_SELECTOR: {
       MIN_WIDTH: 170,
-      HEIGHT: 32,
-      BORDER_RADIUS: 8,
+      HEIGHT: 44,
+      BORDER_RADIUS: 12,
     },
     DROPDOWN: {
       MAX_HEIGHT: 200,
@@ -43,7 +43,7 @@ export const TOP_NAVIGATION = {
       BORDER_RADIUS: 16,
     },
   },
-  
+
   // Icon sizes
   ICON_SIZES: {
     DROPDOWN: { width: 12, height: 12 },
@@ -51,7 +51,7 @@ export const TOP_NAVIGATION = {
     USER: { width: 18, height: 18 },
     ALERT: { width: 20, height: 20 },
   },
-  
+
   // Styling
   STYLING: {
     BORDER_WIDTH: 1,
@@ -67,7 +67,7 @@ export const TOP_NAVIGATION = {
       THIRD_AVATAR: 2,
     },
   },
-  
+
   // Animation
   ANIMATION: {
     ACTIVE_OPACITY: 0.8,
@@ -99,40 +99,40 @@ export const BOTTOM_NAVIGATION = {
       iconKey: 'profile',
     },
   ],
-  
+
   // Dimensions
   DIMENSIONS: {
-    CONTAINER_HEIGHT: 95,
-    ICON_CONTAINER: {
-      SIZE: 48,
-      BORDER_RADIUS: 24,
+    CONTAINER_HEIGHT: 72,
+    TOP_RADIUS: 24,
+    INDICATOR: {
+      WIDTH: 28,
+      HEIGHT: 3,
     },
-    ICON_SIZE: 20,
+    ICON_BOX: 28,
+    AVATAR: {
+      SIZE: 24,
+      RING: 2,
+    },
   },
-  
+
   // Styling
   STYLING: {
     ACTIVE_OPACITY: 0.8,
     TEXT: {
-      ACTIVE_OPACITY: 1,
-      INACTIVE_OPACITY: 0.4,
       ACTIVE_FONT_WEIGHT: '600',
       INACTIVE_FONT_WEIGHT: '400',
     },
   },
-  
+
   // Padding and margins
   SPACING: {
     CONTAINER: {
-      TOP: 10,
-      RIGHT: 18,
+      TOP: 0,
+      HORIZONTAL: 12,
       BOTTOM: 10,
-      LEFT: 18,
     },
-    ICON_CONTAINER: {
-      TOP: 10,
-      BOTTOM: 8,
-    },
+    ICON_TOP: 10,
+    LABEL_TOP: 4,
   },
 } as const;
 
@@ -159,7 +159,7 @@ export const ICON_CONFIG = {
     LARGE: { width: 20, height: 20 },
     EXTRA_LARGE: { width: 24, height: 24 },
   },
-  
+
   // Icon colors for different states
   COLORS: {
     PRIMARY: 'primary',
@@ -168,7 +168,7 @@ export const ICON_CONFIG = {
     TEXT: 'text',
     NAVBAR: 'navBarBackground',
   },
-  
+
   // Icon types for different navigation contexts
   TYPES: {
     NAVIGATION: ['home', 'devices', 'energy', 'profile'],

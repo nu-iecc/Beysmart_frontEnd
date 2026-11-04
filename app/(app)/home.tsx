@@ -1,3 +1,12 @@
+import LockCard, { AddLockCard, lockRole } from '@/components/LockCard';
+import ProfileSection from '@/components/ProfileSection';
+import ComingSoon from '@/components/ComingSoon';
+import LockLoader from '@/components/LockLoader';
+import HomeDropdown from '@/components/HomeDropdown';
+import { Ionicons } from '@expo/vector-icons';
+import { toast } from 'sonner-native';
+import { Animated, RefreshControl } from 'react-native';
+import { Spacing } from '@/design-system/Layout/spacing';
 import { AppButton } from '@/design-system/Buttons/Buttons'
 import { colors } from '@/design-system/colors/colors'
 import { HOME_SETUP, SUPPORT_BODY, SUPPORT_EMAIL, SUPPORT_SUBJECT } from '@/design-system/home/Constants'
@@ -10,7 +19,6 @@ import {
     LockIcon,
     Robot
 } from '@/design-system/icons'
-import { Beylock, PlusIcon } from '@/design-system/icons/filled'
 import { BottomNavigation, TopNavigation } from '@/design-system/Navigation'
 import type { BottomNavigationItem, Home as DSHome, User as DSUser } from '@/design-system/Navigation/Types'
 import { Typography } from '@/design-system/typography/typography'
@@ -26,21 +34,21 @@ import apiClient from '../../utils/api'
 const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
     const size = HOME_SETUP.DIMENSIONS.STEP_ICON.SIZE
     const borderRadius = HOME_SETUP.DIMENSIONS.STEP_ICON.BORDER_RADIUS
-  
+
     const backgroundColor = step.isCompleted
       ? colors.completedstep
       : step.isActive
       ? colors.activestep
       : colors.inactivestep
-  
+
     const IconComponent = useMemo(() => {
-      
-      const iconColor = step.isCompleted 
-        ? colors.surface          
-        : step.isActive 
-        ? colors.surface           
-        : colors.notactiveicon           
-      
+
+      const iconColor = step.isCompleted
+        ? colors.surface
+        : step.isActive
+        ? colors.surface
+        : colors.notactiveicon
+
       switch (step.iconKey) {
         case 'home':
           return <HomeIcon width={22} height={22} color={iconColor} />
@@ -54,7 +62,7 @@ const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
           return <HomeIcon width={22} height={22} color={iconColor} />
       }
     }, [step.iconKey, step.isCompleted, step.isActive]) // Added missing dependencies
-  
+
     return (
       <View
         style={{
@@ -189,8 +197,13 @@ const Header: React.FC<{
   )
 })
 
+Header.displayName = 'HomeHeader'
+
 const HomeScreen: React.FC = () => {
   const params = useLocalSearchParams()
+  useEffect(() => {
+    if (typeof params.tab === 'string' && ['home','devices','energy','profile'].includes(params.tab)) setActiveTab(params.tab)
+  }, [params.tab])
   const [steps, setSteps] = useState<SetupStep[]>(() => resetSetupSteps())
   const [activeHomeId, setActiveHomeId] = useState<number | undefined>(undefined)
   const [activeTab, setActiveTab] = useState<string>('home')
@@ -199,13 +212,22 @@ const HomeScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [homes, setHomes] = useState<DSHome[]>([])
   const [isLoadingHomes, setIsLoadingHomes] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const contentOpacity = React.useRef(new Animated.Value(1)).current
+  const handleRefresh = useCallback(() => { setRefreshing(true); setRefreshKey(value => value + 1) }, [])
+  useEffect(() => {
+    const selected = Number(params.selectedHomeId)
+    if (Number.isFinite(selected) && homes.some(home => home.id === selected)) setActiveHomeId(selected)
+  }, [params.selectedHomeId, homes])
   const [rooms, setRooms] = useState<any[]>([])
   const [isLoadingRooms, setIsLoadingRooms] = useState(true)
   const [devices, setDevices] = useState<any[]>([])
   const [showProfile, setShowProfile] = useState(false)
 
   // Combined loading state - wait for all critical data
-  const isLoadingData = isLoading || isLoadingHomes || isLoadingRooms
+  const isLoadingData = isLoading || isLoadingHomes || (isLoadingRooms && devices.length === 0 && !refreshing)
+  useEffect(() => { if (!isLoadingRooms) setRefreshing(false) }, [isLoadingRooms])
 
   // Compute active home from homes array
   const activeHome = useMemo(() => {
@@ -221,7 +243,7 @@ const HomeScreen: React.FC = () => {
   const updateStepsForCurrentHome = useCallback((homeId: number | undefined, rooms: any[], devicesList: any[] = []) => {
     // Reset all steps first
     let newSteps = resetSetupSteps()
-    
+
     if (!homeId) {
       // No home selected - all steps locked except add_home
       setSteps(newSteps)
@@ -325,7 +347,7 @@ const HomeScreen: React.FC = () => {
           name: home.name
         }))
         setHomes(homesData)
-        
+
         // Set first home as active if available
         if (homesData.length > 0) {
           setActiveHomeId(homesData[0].id)
@@ -357,24 +379,24 @@ const HomeScreen: React.FC = () => {
 
       try {
         setIsLoadingRooms(true)
-        
+
         // Load all rooms and filter by home ID
         const roomsResponse = await apiClient.get('home/rooms/')
         const filteredRooms = roomsResponse.data.filter((room: any) => {
           return room.home === activeHomeId || room.home === String(activeHomeId) || String(room.home) === String(activeHomeId)
         })
         setRooms(filteredRooms)
-        
+
         // Load all devices and filter by home ID
         const devicesResponse = await apiClient.get('home/devices/')
         const filteredDevices = devicesResponse.data.filter((device: any) => {
           return device.home === activeHomeId || device.home === String(activeHomeId) || String(device.home) === String(activeHomeId)
         })
         setDevices(filteredDevices)
-        
+
         // Update setup steps based on current home's state
         updateStepsForCurrentHome(activeHomeId, filteredRooms, filteredDevices)
-        
+
       } catch (error: any) {
         console.error('Error loading rooms/devices:', error);
         setRooms([])
@@ -386,7 +408,7 @@ const HomeScreen: React.FC = () => {
     }
 
     loadRoomsAndDevices()
-  }, [activeHomeId, updateStepsForCurrentHome])
+  }, [activeHomeId, updateStepsForCurrentHome, refreshKey])
 
   // Handle step completion from navigation params
   useEffect(() => {
@@ -394,7 +416,7 @@ const HomeScreen: React.FC = () => {
       const stepId = params.completedStep as string
       setSteps(prevSteps => completeSetupStep(prevSteps, stepId))
     }
-    
+
     // Handle add_room or add_device completion
     if (params.add_room === 'true' || params.add_device === 'true') {
       // Reload rooms and devices, then update steps for current home
@@ -403,14 +425,14 @@ const HomeScreen: React.FC = () => {
           try {
             // Reload rooms
             const roomsResponse = await apiClient.get('home/rooms/')
-            const filteredRooms = roomsResponse.data.filter((room: any) => 
+            const filteredRooms = roomsResponse.data.filter((room: any) =>
               room.home === activeHomeId || room.home === String(activeHomeId) || String(room.home) === String(activeHomeId)
             )
             setRooms(filteredRooms)
 
             // Reload devices
             const devicesResponse = await apiClient.get('home/devices/')
-            const filteredDevices = devicesResponse.data.filter((device: any) => 
+            const filteredDevices = devicesResponse.data.filter((device: any) =>
               device.home === activeHomeId || device.home === String(activeHomeId) || String(device.home) === String(activeHomeId)
             )
             setDevices(filteredDevices)
@@ -438,7 +460,7 @@ const HomeScreen: React.FC = () => {
       isCompleted: step.isCompleted,
       isLocked: step.isLocked
     })
-    
+
     const canProceed = step.isActive && !step.isCompleted && !step.isLocked
     if (!canProceed) {
       console.log('❌ Cannot proceed with step:', step.key)
@@ -492,14 +514,11 @@ const HomeScreen: React.FC = () => {
   }, [steps, activeHomeId, devices, activeHome])
 
   const handleTabPress = useCallback((key: string) => {
-    setActiveTab(key)
-    if (key === 'profile') {
-      setShowProfile(true)
-    } else if (key === 'devices') {
-      router.push('/(HomePage_actions)/MyDevices' as any)
-    }
-    // Add other tab navigation handlers as needed
-  }, [])
+    Animated.timing(contentOpacity, { toValue: 0, duration: 90, useNativeDriver: true }).start(() => {
+      setActiveTab(key)
+      Animated.timing(contentOpacity, { toValue: 1, duration: 150, useNativeDriver: true }).start()
+    })
+  }, [contentOpacity])
 
   // Handle lock card press
   const handleLockPress = useCallback((device: any) => {
@@ -507,6 +526,7 @@ const HomeScreen: React.FC = () => {
       pathname: '/(Lock/Unlock)/LockControlScreen',
       params: {
         deviceId: device.id.toString(),
+        role: lockRole(device),
         deviceName: device.name,
         homeName: device.home_name || device.room_name || activeHome?.name || 'Home',
       },
@@ -523,228 +543,45 @@ const HomeScreen: React.FC = () => {
     return device.home_name || 'No location'
   }, [rooms])
 
-  // Get device icon
-  const getDeviceIcon = useCallback((deviceType: string) => {
-    return <Beylock width={32} height={32} color={colors.primary.darker} />
-  }, [])
-
-  // Get status badge
-  const getStatusBadge = useCallback((device: any) => {
-    // Only show online if explicitly true, otherwise show offline
-    const isOnline = device.is_online === true
-    return {
-      text: isOnline ? 'Connected' : 'Not Connected',
-      color: isOnline ? colors.success : colors.secondaryText,
-      backgroundColor: isOnline ? colors.successLight : '#F3F4F6'
-    }
-  }, [])
-
   // Render lock card
-  const renderLockCard = useCallback((device: any) => {
-    const statusBadge = getStatusBadge(device)
-
-    return (
-      <TouchableOpacity
-        key={device.id}
-        style={{
-          backgroundColor: colors.surface,
-          borderRadius: 12,
-          marginBottom: 10,
-          padding: 14,
-          shadowColor: colors.text,
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 3,
-        }}
-        onPress={() => handleLockPress(device)}
-        activeOpacity={0.7}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* Device Icon */}
-          <View
-            style={{
-              width: 50,
-              height: 50,
-              borderRadius: 25,
-              backgroundColor: '#DCEBFF',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginRight: 12,
-            }}
-          >
-            {getDeviceIcon(device.device_type)}
-          </View>
-
-          {/* Device Info */}
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Typography variant="h3" color={colors.text} style={{ fontSize: 16, marginBottom: 4 }}>
-              {device.name}
-            </Typography>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Typography variant="caption" color={colors.secondaryText}>
-                {getRoomName(device)}
-              </Typography>
-              <View
-                style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 2,
-                  borderRadius: 8,
-                  backgroundColor: statusBadge.backgroundColor,
-                }}
-              >
-                <Typography variant="caption" color={statusBadge.color} style={{ fontSize: 10 }}>
-                  {statusBadge.text}
-                </Typography>
-              </View>
-            </View>
-          </View>
-
-          {/* Chevron */}
-          <Typography variant="body" color={colors.secondaryText} style={{ fontSize: 20 }}>
-            ›
-          </Typography>
-        </View>
-      </TouchableOpacity>
-    )
-  }, [getDeviceIcon, getStatusBadge, handleLockPress, getRoomName])
+  const renderLockCard = useCallback((device: any) => (
+    <LockCard key={device.id} name={device.name} location={getRoomName(device)} role={lockRole(device)} connectionLabel={device.is_online === true ? 'Connected' : 'Not connected'} stateLabel={typeof device.is_locked === 'boolean' ? device.is_locked ? 'Locked' : 'Unlocked' : undefined} onPress={() => handleLockPress(device)} />
+  ), [handleLockPress, getRoomName])
 
   // Show loading state while fetching all critical data
   if (isLoadingData) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
-        <Typography variant="h3" color={colors.text} style={{ marginBottom: 8 }}>Loading...</Typography>
-        <Typography variant="caption" color={colors.secondaryText}>Setting up your smart home</Typography>
+      <View style={{ flex: 1, backgroundColor: '#F3F5F8', justifyContent: 'center', alignItems: 'center' }}>
+        <LockLoader label="Loading your locks…" />
       </View>
     )
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <Header
-        user={user || { first_name: undefined, profile_picture: undefined }}
-        homes={homes}
-        activeHomeId={activeHomeId}
-        onHomeSelect={setActiveHomeId}
-      />
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: '4%',
-          paddingTop: 16,
-          paddingBottom: 100,
-        }}
-      >
-        {isSetupComplete && devices.length > 0 ? (
-          // Show locks after setup is complete
-          <>
-            <View style={{ marginBottom: 12 }}>
-              <Typography variant="h2" color={colors.text} style={{ fontSize: 20, marginBottom: 12 }}>
-                Your Locks
-              </Typography>
-            </View>
-
-            {devices.map(device => renderLockCard(device))}
-
-            {/* Add Another Lock Button */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: colors.background,
-                borderRadius: scale(12),
-                padding: scale(14),
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginTop: scale(6),
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderStyle: 'dashed',
-              }}
-              onPress={() => router.push('/(devices)/AddDevice2')}
-              activeOpacity={0.7}
-            >
-              <PlusIcon width={scale(20)} height={scale(20)} color={colors.primary.base} />
-              <Typography variant="body" color={colors.primary.base} style={{ marginLeft: scale(8), fontWeight: '600' }}>
-                Add Another Lock
-              </Typography>
-            </TouchableOpacity>
-          </>
-        ) : (
-          // Show setup steps when not complete
-          <>
-            {steps.map((step, index) => (
-              <StepRow
-                key={step.id}
-                step={step}
-                onAction={onAction}
-                showLine={index < steps.length - 1}
-              />
-            ))}
-          </>
-        )}
-
-        <View style={{ alignItems: 'center', marginTop: 24 }}>
-  <View style={{ flexDirection: "row" }}>
-    <Typography variant="caption" color={'#6B7280'}>
-      Need help?
-    </Typography>
-    <TouchableOpacity
-      onPress={() => {
-        const email = SUPPORT_EMAIL
-        const subject = SUPPORT_SUBJECT
-        const body = SUPPORT_BODY
-        const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-        Linking.openURL(url).catch(err =>
-          console.error("Error opening email app", err)
-        )
-      }}
-    >
-      <Typography variant="caption" color={'#2E7DFF'} style={{ marginLeft: 4 }}>
-        Contact Support
-      </Typography>
-    </TouchableOpacity>
-  </View>
-</View>
-      </ScrollView>
-      <BottomNavigation
-        items={bottomNavItems}
-        activeKey={activeTab}
-        profile_picture={user?.profile_picture}
-        onTabPress={handleTabPress}
-      />
-      
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        onClose={() => setShowProfile(false)}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail, // Real user email from stored data
-          profilePicture: user.profile_picture || null,
-          homesCount: homes.length
-        } : undefined}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
-    </View>
-  )
+  return (<View style={{ flex: 1, backgroundColor: '#F3F5F8' }}>
+ <Header user={user || { first_name: undefined, profile_picture: undefined }} homes={homes} activeHomeId={activeHomeId} onHomeSelect={setActiveHomeId} />
+ <Animated.ScrollView style={{ opacity: contentOpacity }} refreshControl={activeTab === 'profile' || activeTab === 'energy' ? undefined : <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md }} showsVerticalScrollIndicator={false}>
+  {(activeTab === 'home' || activeTab === 'devices') && <View style={{ gap: 12 }}>
+   {homes.length > 1 && <View style={{ alignSelf: 'flex-start', marginBottom: 4 }}><HomeDropdown items={homes} activeId={activeHomeId} onSelect={setActiveHomeId} onAddHome={() => router.push('/(home)/AddHome')} /></View>}
+   {devices.length ? <>
+    <Typography variant="h2" style={{ marginBottom: 8 }}>Your Locks</Typography>
+    {devices.map(renderLockCard)}
+    <AddLockCard onPress={() => router.push('/(devices)/AddDevice2')} />
+   </> : activeTab === 'home' ? steps.map((step, index) => <StepRow key={step.id} step={step} onAction={onAction} showLine={index < steps.length - 1} />) : <>
+    <Typography variant="h2">Your Locks</Typography><Typography variant="body" style={{ marginVertical: 16 }}>No locks yet. Added locks will appear here.</Typography><AddLockCard onPress={() => router.push('/(devices)/AddDevice2')} />
+   </>}
+   {activeTab === 'devices' && <TouchableOpacity onPress={() => router.push('/(HomePage_actions)/MyDevices')} style={{ paddingVertical: 12, alignItems: 'center' }}><Typography variant="caption" color={colors.secondaryText}>Search and filter devices</Typography></TouchableOpacity>}
+  </View>}
+  {activeTab === 'energy' && <ComingSoon title="Energy" icon="flash-outline" />}
+  {activeTab === 'profile' && <ProfileSection name={user?.first_name} email={userEmail} profilePicture={user?.profile_picture} homesCount={homes.length}
+   onAddDevice={() => router.push('/(devices)/AddDevice2')} onMyHomes={() => router.push('/(profile actions)/myHomes')}
+   onInviteFamily={() => toast.info('Inviting family is coming soon.')} onAccountSettings={() => router.push('/(profile actions)/AccountSettings')} onHelpSupport={() => router.push('/(profile actions)/Help&support')} />}
+  <View style={{ alignItems: 'center', marginTop: 'auto', paddingTop: Spacing.xl }}><View style={{ flexDirection: 'row' }}>
+   <Typography variant="caption" color="#6B7280">Need help?</Typography>
+   <TouchableOpacity onPress={() => { const url = 'mailto:' + SUPPORT_EMAIL + '?subject=' + encodeURIComponent(SUPPORT_SUBJECT) + '&body=' + encodeURIComponent(SUPPORT_BODY); Linking.openURL(url).catch(error => console.error('Error opening email app', error)); }}><Typography variant="caption" color="#2E7DFF" style={{ marginLeft: 4 }}>Contact Support</Typography></TouchableOpacity>
+  </View></View>
+ </Animated.ScrollView>
+ <BottomNavigation items={bottomNavItems} activeKey={activeTab} profile_picture={user?.profile_picture} onTabPress={handleTabPress} />
+</View>);
 }
 
 export default HomeScreen

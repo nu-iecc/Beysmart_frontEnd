@@ -1,3 +1,7 @@
+import SetupScreen from '@/components/SetupScreen';
+import { setupStyles } from '@/components/SetupScreen';
+import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -99,7 +103,7 @@ const AddDevice6 = () => {
         // WiFi connected successfully!
         await AsyncStorage.setItem('lastWifiSSID', wifiName);
         console.log('✅ Device confirmed WiFi connection!');
-        
+
         Alert.alert(
           'WiFi Connected!',
           'Your device has successfully connected to the WiFi network. Proceeding to next step.',
@@ -138,7 +142,7 @@ const AddDevice6 = () => {
     } catch (error: any) {
       console.error('❌ Error sending WiFi credentials:', error);
       setIsSendingWiFi(false);
-      
+
       Alert.alert(
         'Connection Error',
         `Failed to send WiFi credentials to the device.\n\nError: ${error.message || 'Unknown error'}`,
@@ -175,113 +179,65 @@ const AddDevice6 = () => {
   ];
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <BackArrow width={24} height={24} color={colors.surface} />
-          </TouchableOpacity>
-          <Typography variant="h3" color={colors.surface} style={styles.headerTitle}>
-            {WIFI_DETAILS.NAVIGATION.TITLE}
-          </Typography>
-        </View>
-        <Typography variant="caption" color={colors.surface} style={styles.stepIndicator}>
-          {WIFI_DETAILS.NAVIGATION.STEP_INDICATOR}
-        </Typography>
-      </View>
-
-      {/* Main Content */}
-      <View style={styles.content}>
-        <Typography variant="h2" color={colors.text} style={styles.sectionTitle}>
-          {WIFI_DETAILS.SECTIONS.WIFI_DETAILS}
-        </Typography>
-
-        {/* WiFi Name Field */}
+    <SetupScreen
+      step={4}
+      title="Connect to Wi-Fi"
+      subtitle="Your lock uses Wi-Fi so you can open it from anywhere."
+      busy={isSendingWiFi}
+      footer={
+        <AppButton
+          variant="primaryLarge"
+          title={isSendingWiFi ? 'Connecting the lock…' : WIFI_DETAILS.NAVIGATION.CONTINUE_BUTTON}
+          onPress={handleContinue}
+          disabled={isSendingWiFi}
+          accessibilityLabel={WIFI_DETAILS.NAVIGATION.CONTINUE_BUTTON}
+          accessibilityHint="Tap to continue with WiFi setup"
+        />
+      }
+    >
+      <View style={setupStyles.card}>
         <TextField
-          label={WIFI_DETAILS.FIELDS.WIFI_NAME.LABEL}
+          label="Network name"
           value={wifiName}
           onChangeText={setWifiName}
           placeholder={WIFI_DETAILS.FIELDS.WIFI_NAME.PLACEHOLDER}
           error={errors.wifiName}
-          accessibilityLabel={WIFI_DETAILS.FIELDS.WIFI_NAME.LABEL}
-          accessibilityHint={`Enter your ${WIFI_DETAILS.FIELDS.WIFI_NAME.LABEL.toLowerCase()}`}
+          leftIcon={<Ionicons name="wifi" size={18} color={colors.disabled} />}
+          disabled={isSendingWiFi}
+          accessibilityLabel="Wi-Fi network name"
+          accessibilityHint="Enter your Wi-Fi network name"
         />
-
-        {/* WiFi Password Field */}
         <TextField
           label={WIFI_DETAILS.FIELDS.WIFI_PASSWORD.LABEL}
           value={wifiPassword}
           onChangeText={setWifiPassword}
           placeholder={WIFI_DETAILS.FIELDS.WIFI_PASSWORD.PLACEHOLDER}
-          secureTextEntry={true}
-          showEyeIcon={true}
+          secureTextEntry
+          showEyeIcon
           error={errors.wifiPassword}
-          accessibilityLabel={WIFI_DETAILS.FIELDS.WIFI_PASSWORD.LABEL}
-          accessibilityHint={`Enter your ${WIFI_DETAILS.FIELDS.WIFI_PASSWORD.LABEL.toLowerCase()}`}
+          leftIcon={<Ionicons name="lock-closed-outline" size={18} color={colors.disabled} />}
+          disabled={isSendingWiFi}
+          accessibilityLabel="Wi-Fi password"
+          accessibilityHint="Enter your Wi-Fi password"
         />
-
-        {/* Continue Button */}
-        <View style={styles.buttonContainer}>
-          <AppButton
-            variant="primaryLarge"
-            title={isSendingWiFi ? 'Sending WiFi Credentials...' : WIFI_DETAILS.NAVIGATION.CONTINUE_BUTTON}
-            onPress={handleContinue}
-            disabled={isSendingWiFi}
-            accessibilityLabel={WIFI_DETAILS.NAVIGATION.CONTINUE_BUTTON}
-            accessibilityHint="Tap to continue with WiFi setup"
-          />
-        </View>
       </View>
 
-      {/* Bottom Navigation */}
-      <BottomNavigation
-        items={bottomNavItems}
-        activeKey="devices"
-        onTabPress={handleTabPress}
-      />
-
-      {/* Profile Modal */}
-      <ProfilePage
-        visible={showProfile}
-        userData={user ? {
-          name: user.first_name || null,
-          email: userEmail,
-          profilePicture: user.profile_picture || null,
-          homesCount: 0 // We don't have homes data in this context
-        } : undefined}
-        onClose={() => setShowProfile(false)}
-        onAddDevice={() => {
-          setShowProfile(false);
-          router.push('/(devices)/AddDevice2');
-        }}
-        onMyHomes={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/myHomes');
-        }}
-        onInviteFamily={() => {
-          setShowProfile(false);
-          // Handle invite family
-        }}
-        onAccountSettings={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/AccountSettings');
-        }}
-        onHelpSupport={() => {
-          setShowProfile(false);
-          router.push('/(profile actions)/Help&support');
-        }}
-      />
-    </View>
+      <View style={styles.tip}>
+        <Ionicons name="information-circle-outline" size={18} color={colors.disabled} />
+        <Typography variant="caption" color={colors.disabled} style={styles.tipText}>
+          Make sure the lock is in range of your router. It can take up to 30 seconds for the lock to confirm it’s connected.
+        </Typography>
+      </View>
+    </SetupScreen>
   );
 };
 
-const styles = {
-  container: {
+const styles = StyleSheet.create({
+container: {
     flex: 1,
     backgroundColor: colors.navBarBackground,
   },
-  header: {
+header: {
     backgroundColor: colors.navBarBackground,
     height: 120,
     flexDirection: 'row' as const,
@@ -290,37 +246,39 @@ const styles = {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.xxl,
   },
-  headerLeft: {
+headerLeft: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
   },
-  backButton: {
+backButton: {
     padding: Spacing.xs,
     marginRight: Spacing.sm,
   },
-  headerTitle: {
+headerTitle: {
     textAlign: 'left' as const,
     fontSize: 16,
     fontWeight: '600' as const,
   },
-  stepIndicator: {
+stepIndicator: {
     fontSize: 14,
   },
-  content: {
+content: {
     flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
   },
-  sectionTitle: {
+sectionTitle: {
     fontSize: 18,
     fontWeight: '600' as const,
     marginBottom: Spacing.sm - 2,
   },
-  buttonContainer: {
+buttonContainer: {
     marginTop: Spacing.xl,
     alignItems: 'center' as const,
   },
-};
+tip: { flexDirection: 'row', gap: 8, paddingHorizontal: 4 },
+tipText: { flex: 1 }
+});
 
 export default AddDevice6;

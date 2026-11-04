@@ -1,3 +1,10 @@
+import LockSubpage, { subpageStyles } from '@/components/LockSubpage';
+import LockLoader from '@/components/LockLoader';
+import TextField from '@/design-system/inputs/TextField';
+import { AppButton } from '@/design-system/Buttons/Buttons';
+import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet } from 'react-native';
+import PageHeader from '@/components/PageHeader';
 import { getMediaUrl } from '@/constants/api';
 import { LockColors } from '@/design-system';
 import { colors } from '@/design-system/colors/colors';
@@ -37,12 +44,12 @@ const DeviceSettings: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
-  
+
   // Settings state
-  const [newDeviceName, setNewDeviceName] = useState(deviceName);
+  const [newDeviceName, setNewDeviceName] = useState(deviceName || '');
   const [doorSensorEnabled, setDoorSensorEnabled] = useState(true);
   const [latchEnabled, setLatchEnabled] = useState(true);
-  
+
   // Track changes
   const initialStateRef = useRef({
     doorSensorEnabled: true,
@@ -124,7 +131,7 @@ const DeviceSettings: React.FC = () => {
     setIsSaving(true);
     try {
       console.log('📝 Renaming device to:', newDeviceName);
-      
+
       // Update device name in database
       const response = await apiClient.patch(`home/devices/${deviceId}/`, {
         name: newDeviceName,
@@ -159,7 +166,7 @@ const DeviceSettings: React.FC = () => {
 
     try {
       console.log(`📝 Setting door sensor to: ${value ? 'ENABLED' : 'DISABLED'}`);
-      
+
       // Write to device
       await smartLockService.configureDoorSensor(value);
       await AsyncStorage.setItem(
@@ -169,7 +176,7 @@ const DeviceSettings: React.FC = () => {
           latchEnabled,
         })
       );
-      
+
       console.log('✅ Door sensor configured successfully');
 
       if (isMountedRef.current) {
@@ -181,7 +188,7 @@ const DeviceSettings: React.FC = () => {
       }
     } catch (error: any) {
       console.error('❌ Failed to configure door sensor:', error);
-      
+
       // Revert change on error
       if (isMountedRef.current) {
         setDoorSensorEnabled(!value);
@@ -205,7 +212,7 @@ const DeviceSettings: React.FC = () => {
 
     try {
       console.log(`📝 Setting latch to: ${value ? 'ENABLED' : 'DISABLED'}`);
-      
+
       // Write to device
       await smartLockService.configureUnlatchMode(value);
       await AsyncStorage.setItem(
@@ -215,7 +222,7 @@ const DeviceSettings: React.FC = () => {
           latchEnabled: value,
         })
       );
-      
+
       console.log('✅ Latch configured successfully');
 
       if (isMountedRef.current) {
@@ -227,7 +234,7 @@ const DeviceSettings: React.FC = () => {
       }
     } catch (error: any) {
       console.error('❌ Failed to configure latch:', error);
-      
+
       // Revert change on error
       if (isMountedRef.current) {
         setLatchEnabled(!value);
@@ -251,14 +258,14 @@ const DeviceSettings: React.FC = () => {
 
     try {
       console.log('🗑️ Deleting device:', deviceId);
-      
+
       // Disconnect from BLE device first if connected
       if (smartLockService.isConnected()) {
         console.log('🔌 Disconnecting from device before deletion...');
         await smartLockService.disconnect();
         console.log('✅ Disconnected successfully');
       }
-      
+
       // Delete device from backend
       await apiClient.delete(`home/devices/${deviceId}/`);
 
@@ -336,291 +343,26 @@ const DeviceSettings: React.FC = () => {
     </TouchableOpacity>
   );
 
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* Header */}
-      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.navBarBackground }}>
-        <View
-          style={{
-            backgroundColor: colors.navBarBackground,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-            <TouchableOpacity
-              onPress={handleBack}
-              accessibilityLabel="Go back"
-              accessibilityHint="Return to lock control screen"
-              style={{ padding: Spacing.xs, marginRight: Spacing.sm }}
-            >
-              <BackArrow width={24} height={24} color={LockColors?.menu.background} />
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Typography
-                variant="h3"
-                color={LockColors?.menu.background}
-                style={{ fontSize: 16, fontWeight: '600' }}
-              >
-                Device Settings
-              </Typography>
-            </View>
-          </View>
-        </View>
-      </SafeAreaView>
-
-      {/* Content */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: Spacing.lg }}
-        showsVerticalScrollIndicator={false}
-      >
-        {isLoading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: Spacing.xl }}>
-            <Typography variant="body" color={colors.secondaryText}>
-              Loading settings...
-            </Typography>
-          </View>
-        ) : (
-          <>
-            {/* Device Name Section */}
-            <View style={{ marginTop: Spacing.lg }}>
-              <Typography
-                variant="caption"
-                color={colors.secondaryText}
-                style={{ paddingHorizontal: Spacing.md, marginBottom: Spacing.sm, fontWeight: '600', textTransform: 'uppercase' }}
-              >
-                Device Information
-              </Typography>
-              <SettingsItem
-                title="Device Name"
-                subtitle={deviceName}
-                onPress={() => {
-                  setNewDeviceName(deviceName);
-                  setShowRenameModal(true);
-                }}
-                rightElement={
-                  <Typography variant="caption" color={colors.primary.base} style={{ fontWeight: '600' }}>
-                    Edit
-                  </Typography>
-                }
-              />
-              <SettingsItem
-                title="Location"
-                subtitle={homeName}
-              />
-            </View>
-
-            {/* Device Configuration Section */}
-            <View style={{ marginTop: Spacing.lg }}>
-              <Typography
-                variant="caption"
-                color={colors.secondaryText}
-                style={{ paddingHorizontal: Spacing.md, marginBottom: Spacing.sm, fontWeight: '600', textTransform: 'uppercase' }}
-              >
-                Configuration
-              </Typography>
-              <SettingsItem
-                title="Door Sensor"
-                subtitle={doorSensorEnabled ? 'Enabled' : 'Disabled'}
-                disabled={isSaving || !smartLockService.isConnected()}
-                rightElement={
-                  <Switch
-                    value={doorSensorEnabled}
-                    onValueChange={handleDoorSensorToggle}
-                    disabled={isSaving || !smartLockService.isConnected()}
-                    trackColor={{ false: colors.disabled, true: colors.success }}
-                    thumbColor={doorSensorEnabled ? colors.primary.base : colors.disabled}
-                  />
-                }
-              />
-              <SettingsItem
-                title="Latch Configuration"
-                subtitle={latchEnabled ? 'Latch active' : 'Latch inactive'}
-                disabled={isSaving || !smartLockService.isConnected()}
-                rightElement={
-                  <Switch
-                    value={latchEnabled}
-                    onValueChange={handleLatchToggle}
-                    disabled={isSaving || !smartLockService.isConnected()}
-                    trackColor={{ false: colors.disabled, true: colors.success }}
-                    thumbColor={latchEnabled ? colors.primary.base : colors.disabled}
-                  />
-                }
-              />
-            </View>
-
-            {/* Help Text */}
-            {!smartLockService.isConnected() && (
-              <View
-                style={{
-                  backgroundColor: colors.background,
-                  marginHorizontal: Spacing.md,
-                  marginTop: Spacing.lg,
-                  paddingHorizontal: Spacing.md,
-                  paddingVertical: Spacing.sm,
-                  borderRadius: 8,
-                  borderLeftWidth: 4,
-                  borderLeftColor: colors.info,
-                }}
-              >
-                <Typography variant="caption" color={colors.info} style={{ fontSize: 12 }}>
-                  Connect to your device to modify these settings.
-                </Typography>
-              </View>
-            )}
-
-            {/* Danger Zone Section */}
-            <View style={{ marginTop: Spacing.xl }}>
-              <Typography
-                variant="caption"
-                color={colors.error}
-                style={{ paddingHorizontal: Spacing.md, marginBottom: Spacing.sm, fontWeight: '600', textTransform: 'uppercase' }}
-              >
-                Danger Zone
-              </Typography>
-              <TouchableOpacity
-                onPress={() => setShowDeleteConfirm(true)}
-                disabled={isSaving}
-                activeOpacity={0.7}
-                style={{
-                  backgroundColor: colors.surface,
-                  paddingHorizontal: Spacing.md,
-                  paddingVertical: Spacing.md,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border,
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Typography
-                    variant="body"
-                    color={colors.error}
-                    style={{ fontWeight: '600' }}
-                  >
-                    Delete Device
-                  </Typography>
-                  <Typography variant="caption" color={colors.secondaryText} style={{ fontSize: 12, marginTop: 4 }}>
-                    Permanently remove this device from your account
-                  </Typography>
-                </View>
-                <Typography variant="body" color={colors.error} style={{ fontSize: 20, fontWeight: '300' }}>
-                  ›
-                </Typography>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-      </ScrollView>
-
-      {/* Rename Modal */}
-      <Modal
-        visible={showRenameModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowRenameModal(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end' }}>
-          <View
-            style={{
-              backgroundColor: '#FFFFFF',
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              padding: Spacing.md,
-              paddingTop: Spacing.lg,
-              width: '100%',
-            }}
-          >
-            {/* Modal Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg }}>
-              <Typography variant="h3" color="#000000" style={{ fontSize: 18, fontWeight: '600' }}>
-                Rename Device
-              </Typography>
-              <TouchableOpacity onPress={() => setShowRenameModal(false)} style={{ padding: Spacing.xs }}>
-                <Typography variant="h3" color="#666666" style={{ fontSize: 24 }}>×</Typography>
-              </TouchableOpacity>
-            </View>
-
-            {/* Input Field */}
-            <TextInput
-              value={newDeviceName}
-              onChangeText={setNewDeviceName}
-              placeholder="Enter device name"
-              placeholderTextColor={colors.disabled}
-              maxLength={50}
-              style={{
-                backgroundColor: colors.background,
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderRadius: 8,
-                paddingHorizontal: Spacing.md,
-                paddingVertical: Spacing.sm,
-                marginBottom: Spacing.lg,
-                color: colors.text,
-                fontSize: 14,
-              }}
-              editable={!isSaving}
-            />
-
-            {/* Character count */}
-            <Typography
-              variant="caption"
-              color={colors.secondaryText}
-              style={{ fontSize: 11, marginBottom: Spacing.md, textAlign: 'right' }}
-            >
-              {newDeviceName.length}/50
-            </Typography>
-
-            {/* Action Buttons */}
-            <View style={{ gap: Spacing.md }}>
-              <TouchableOpacity
-                onPress={handleRenameDevice}
-                disabled={isSaving || !newDeviceName.trim()}
-                activeOpacity={0.7}
-                style={{
-                  backgroundColor: newDeviceName.trim() ? colors.primary.base : colors.disabled,
-                  paddingVertical: Spacing.md,
-                  paddingHorizontal: Spacing.lg,
-                  borderRadius: 12,
-                  alignItems: 'center',
-                }}
-              >
-                <Typography
-                  variant="body"
-                  color={colors.text}
-                  style={{ fontSize: 16, fontWeight: '600' }}
-                >
-                  {isSaving ? 'Saving...' : 'Save'}
-                </Typography>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setShowRenameModal(false)}
-                disabled={isSaving}
-                activeOpacity={0.7}
-                style={{
-                  backgroundColor: '#F5F5F5',
-                  paddingVertical: Spacing.md,
-                  paddingHorizontal: Spacing.lg,
-                  borderRadius: 12,
-                  alignItems: 'center',
-                }}
-              >
-                <Typography variant="body" color="#000000" style={{ fontSize: 16, fontWeight: '600' }}>
-                  Cancel
-                </Typography>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Delete Confirmation Modal */}
-      <Modal
+  return (<LockSubpage title="Lock name" lockName={deviceName} busy={isSaving}>
+ <View style={subpageStyles.card}>
+  <View style={styles.preview}><View style={styles.iconWrap}><Ionicons name="lock-closed" size={24} color={colors.navBarBackground} /></View><View style={styles.previewCopy}><Typography variant="caption" color={colors.notactiveicon}>Preview</Typography><Typography variant="h3" numberOfLines={1}>{newDeviceName.trim() || 'Unnamed lock'}</Typography></View></View>
+  <View style={styles.divider} />
+  <TextField label="Name" maxLength={50} value={newDeviceName} onChangeText={setNewDeviceName} placeholder="e.g. Front door" disabled={isSaving} rightIcon={!!newDeviceName && !isSaving ? <TouchableOpacity onPress={() => setNewDeviceName('')} accessibilityRole="button" accessibilityLabel="Clear name" hitSlop={8}><Ionicons name="close-circle" size={20} color={colors.notactiveicon} /></TouchableOpacity> : undefined} />
+  <View style={styles.meta}><Typography variant="caption" color={colors.disabled}>Choose a name you can recognise.</Typography><Typography variant="caption" color={colors.disabled}>{newDeviceName.length}/50</Typography></View>
+  <AppButton variant="primarySmall" title={isSaving ? 'Saving...' : 'Save name'} onPress={handleRenameDevice} disabled={isSaving || !newDeviceName.trim() || newDeviceName === deviceName} />
+ </View>
+ <Typography variant="caption" color={colors.disabled} style={{ fontSize: 11, letterSpacing: 1.2 }}>CONFIGURATION</Typography>
+ <View style={subpageStyles.card}>
+  {isLoading ? <LockLoader label="Loading settings..." /> : <>
+   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><View style={{ flex: 1 }}><Typography variant="body">Door sensor</Typography><Typography variant="caption" color={colors.disabled}>{doorSensorEnabled ? 'Enabled' : 'Disabled'}</Typography></View><Switch value={doorSensorEnabled} onValueChange={handleDoorSensorToggle} disabled={isSaving || !smartLockService.isConnected()} trackColor={{ false: colors.border, true: colors.primary.base }} /></View>
+   <View style={styles.divider} />
+   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><View style={{ flex: 1 }}><Typography variant="body">Latch configuration</Typography><Typography variant="caption" color={colors.disabled}>{latchEnabled ? 'Latch active' : 'Latch inactive'}</Typography></View><Switch value={latchEnabled} onValueChange={handleLatchToggle} disabled={isSaving || !smartLockService.isConnected()} trackColor={{ false: colors.border, true: colors.primary.base }} /></View>
+  </>}
+  {!smartLockService.isConnected() && <Typography variant="caption" color={colors.info}>Connect to your lock to modify these settings.</Typography>}
+ </View>
+ <View style={subpageStyles.card}><Typography variant="body">Location</Typography><Typography variant="caption" color={colors.disabled}>{homeName}</Typography></View>
+ <TouchableOpacity style={[subpageStyles.card, { flexDirection: 'row', alignItems: 'center', gap: 12 }]} onPress={() => setShowDeleteConfirm(true)} disabled={isSaving}><Ionicons name="trash-outline" size={20} color={colors.error} /><Typography variant="body" color={colors.error}>Delete device</Typography></TouchableOpacity>
+ <Modal
         visible={showDeleteConfirm}
         transparent={true}
         animationType="slide"
@@ -668,7 +410,7 @@ const DeviceSettings: React.FC = () => {
               color="#666666"
               style={{ fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: Spacing.lg }}
             >
-              This action cannot be undone. The device "{deviceName}" will be permanently removed from your account.
+              This action cannot be undone. The device &quot;{deviceName}&quot; will be permanently removed from your account.
             </Typography>
 
             {/* Action Buttons */}
@@ -713,8 +455,16 @@ const DeviceSettings: React.FC = () => {
           </View>
         </View>
       </Modal>
-    </View>
-  );
+</LockSubpage>);
 };
 
 export default DeviceSettings;
+
+const styles = StyleSheet.create({
+  preview: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, backgroundColor: '#F6F8FB' },
+  iconWrap: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary.base },
+  previewCopy: { flex: 1, gap: 2 },
+  divider: { height: 1, backgroundColor: '#EEF1F5', marginVertical: 4 },
+  meta: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: -6 },
+  hint: { flex: 1 },
+});

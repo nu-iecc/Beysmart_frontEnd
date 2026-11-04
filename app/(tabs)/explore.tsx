@@ -68,11 +68,11 @@ export default function ExploreTab() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+container: {
     padding: 24,
     backgroundColor: '#fff',
   },
-  exampleBlock: {
+exampleBlock: {
     gap: 16,
-  },
+  }
 });
