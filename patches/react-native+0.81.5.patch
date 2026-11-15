@@ -1,0 +1,33 @@
+diff --git a/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm b/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
+index 2a67797..f8ead79 100644
+--- a/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
++++ b/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
+@@ -12,6 +12,7 @@
+ #import <React/RCTCxxConvert.h>
+ #import <React/RCTManagedPointer.h>
+ #import <React/RCTModuleMethod.h>
++#import <React/RCTLog.h>
+ #import <React/RCTUtils.h>
+ #import <ReactCommon/CallInvoker.h>
+ #import <ReactCommon/TurboModule.h>
+@@ -435,7 +436,19 @@ TraceSection s(
+     @try {
+       [inv invokeWithTarget:strongModule];
+     } @catch (NSException *exception) {
+-      throw convertNSExceptionToJSError(runtime, exception, std::string{moduleName}, methodNameStr);
++      // Async void methods run on the TurboModule queue. convertNSExceptionToJSError
++      // uses the Hermes runtime from that queue, and Hermes is not thread-safe, so
++      // the process SIGSEGVs in errorStackGetter. Sync void methods still convert
++      // on the JS thread, matching performMethodInvocation.
++      // https://github.com/facebook/react-native/commit/4083a6ff92b0ffd4f71166848f3d7ce36172fac8
++      if (shouldVoidMethodsExecuteSync_) {
++        throw convertNSExceptionToJSError(runtime, exception, std::string{moduleName}, methodNameStr);
++      }
++      RCTLogError(
++          @"Exception thrown while invoking async void TurboModule method %s.%s: %@",
++          moduleName,
++          methodNameStr.c_str(),
++          exception);
+     } @finally {
+       [retainedObjectsForInvocation removeAllObjects];
+     }
