@@ -9,6 +9,7 @@ import { Buffer } from 'buffer';
 import { Permission, PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, Device, Subscription } from 'react-native-ble-plx';
 import { FULL_UUIDS, toFullUUID } from './bleConfig';
+import { SHIELD_SERVICE_UUID } from './shield/uuids';
 import { BleDevice, DoorState, LockPosition, SmartLockState, WifiConnectionState } from './types';
 
 // Singleton BLE Manager instance
@@ -156,7 +157,8 @@ export const enableBluetooth = async (): Promise<boolean> => {
 export const scanForDevices = async (
   onDeviceFound: (device: BleDevice) => void,
   timeout: number = 30000,
-  nameFilter: string = 'Smart Lock'
+  nameFilter: string = 'smart',
+  finishAfterMatchMs?: number
 ): Promise<void> => {
   const manager = getBleManager();
   
@@ -188,6 +190,19 @@ export const scanForDevices = async (
 
   return new Promise((resolve, reject) => {
     console.log('🔍 Starting BLE scan with react-native-ble-plx...');
+    let settled = false;
+    let matchTimer: ReturnType<typeof setTimeout> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = async (reason: string) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (matchTimer) clearTimeout(matchTimer);
+      console.log(`⏰ Scan stopped (${reason}).`);
+      await stopScan();
+      console.log(`🛑 BLE scan stopped. Found ${discoveredDevices.size} devices`);
+      resolve();
+    };
 
     try {
       manager.startDeviceScan(
@@ -204,9 +219,10 @@ export const scanForDevices = async (
           }
 
           if (device) {
+            const advertisedName = device.name || device.localName || '';
             const bleDevice: BleDevice = {
               id: device.id,
-              name: device.name || 'Unknown',
+              name: advertisedName || 'Unknown',
               rssi: device.rssi || -100,
               isConnectable: device.isConnectable ?? false,
               serviceUUIDs: device.serviceUUIDs || undefined,
@@ -214,14 +230,23 @@ export const scanForDevices = async (
 
             console.log(`📡 BLE Device Found:`, JSON.stringify(bleDevice));
 
-            // Filter by name if specified
-            if (nameFilter && device.name?.toLowerCase().includes(nameFilter.toLowerCase())) {
-              console.log(`✅ Smart device detected: ${device.name}`);
+            const advertisesShield = (device.serviceUUIDs ?? []).some(
+              (uuid) => uuid.toLowerCase() === SHIELD_SERVICE_UUID
+            );
+            const nameMatches = advertisedName.toLowerCase().includes(nameFilter.toLowerCase());
+
+            if (nameMatches || advertisesShield) {
+              console.log(`✅ Smart device detected: ${bleDevice.name}`);
               
               if (!discoveredDevices.has(device.id)) {
                 discoveredDevices.set(device.id, bleDevice);
                 console.log(`Found device: ${bleDevice.name} ${bleDevice.id}`);
                 onDeviceFound(bleDevice);
+                if (finishAfterMatchMs !== undefined && !matchTimer) {
+                  matchTimer = setTimeout(() => {
+                    void finish('lock found');
+                  }, finishAfterMatchMs);
+                }
               }
             }
           }
@@ -230,12 +255,8 @@ export const scanForDevices = async (
 
       console.log('✅ BLE scan started successfully');
 
-      // Set timeout for scan
-      setTimeout(async () => {
-        console.log('⏰ Scan timeout reached, stopping scan...');
-        await stopScan();
-        console.log(`🛑 BLE scan stopped. Found ${discoveredDevices.size} devices`);
-        resolve();
+      timer = setTimeout(() => {
+        void finish('timeout');
       }, timeout);
 
     } catch (err) {
@@ -266,7 +287,7 @@ export const stopScan = async (): Promise<void> => {
  * Connect to a BLE device
  * @param deviceId The device ID to connect to
  */
-export const connectToDevice = async (deviceId: string): Promise<Device> => {
+export const connectToDevice = async (deviceId: string, timeoutMs = 10000): Promise<Device> => {
   const manager = getBleManager();
   
   console.log(`🔗 Connecting to device: ${deviceId}`);
@@ -277,7 +298,7 @@ export const connectToDevice = async (deviceId: string): Promise<Device> => {
 
     // Connect to device with timeout
     const device = await manager.connectToDevice(deviceId, {
-      timeout: 10000,
+      timeout: timeoutMs,
       autoConnect: false,
     });
 

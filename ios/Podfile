@@ -67,5 +67,17 @@ target 'Beysmart' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # fmt 11 redefines FMT_USE_CONSTEVAL itself, so a compiler flag cannot
+    # turn it off. Apple clang in Xcode 26 then rejects the consteval calls.
+    fmt_base = File.join(__dir__, 'Pods/fmt/include/fmt/base.h')
+    if File.exist?(fmt_base)
+      original = File.read(fmt_base)
+      patched = original.gsub(
+        "#elif defined(__apple_build_version__) && __apple_build_version__ < 14000029L\n#  define FMT_USE_CONSTEVAL 0  // consteval is broken in Apple clang < 14.\n",
+        "#elif defined(__apple_build_version__)\n#  define FMT_USE_CONSTEVAL 0  // consteval is broken in this Apple clang.\n"
+      )
+      File.write(fmt_base, patched) if patched != original
+    end
   end
 end

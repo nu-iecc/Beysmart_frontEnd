@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView, PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
 import ProfilePage from '../(profile actions)/Profile';
@@ -19,7 +19,7 @@ import { Spacing } from '../../design-system/Layout/spacing';
 import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
 import { Typography } from '../../design-system/typography/typography';
 // Metro config handles BLE mocking when DISABLE_BLE=true
-import bluetoothManager from '../../src/ble';
+import bluetoothManager, { smartLockService } from '../../src/ble';
 
 // BLE Device interface - matches the interface from bluetoothManager
 interface BleDevice {
@@ -46,6 +46,8 @@ const AddDevice4 = () => {
   const [scannedDevices, setScannedDevices] = useState<ScannedDevice[]>([]);
   const [isConnecting, setIsConnecting] = useState(false);
   const [bluetoothEnabled, setBluetoothEnabled] = useState(true);
+  const scanInProgress = useRef(false);
+  const scanScreenActive = useRef(true);
 
   // Map device names to appropriate icons
   const getDeviceIcon = (deviceName: string) => {
@@ -79,26 +81,24 @@ const AddDevice4 = () => {
 
   // Start scanning when component mounts
   useEffect(() => {
+    scanScreenActive.current = true;
     startBluetoothScanning();
     return () => {
-      // Cleanup: stop scanning when component unmounts
-      // NOTE: Do NOT call destroyBleManager() here! It causes crashes during navigation
-      // when the device is still connected. The device should stay connected through
-      // the entire calibration flow.
-      console.log('🔕 AddDevice4 unmounting - NOT destroying BLE manager');
+      scanScreenActive.current = false;
+      void bluetoothManager.stopScan();
     };
   }, []);
 
   const startBluetoothScanning = async () => {
+    if (scanInProgress.current || isConnecting) return;
+    scanInProgress.current = true;
     try {
       setIsScanning(true);
       setScannedDevices([]);
       setShowDeviceList(false);
 
-      let scanTimeout: ReturnType<typeof setTimeout> | null = null;
-      let foundSmartDevice = false;
-
       await bluetoothManager.scanForDevices((device: import("../../src/ble/types").BleDevice) => {
+        if (!scanScreenActive.current) return;
         console.log('Found device:', device.name, device.id);
 
         // Only add devices that have names (the bluetooth manager already filters for named devices)
@@ -118,34 +118,22 @@ const AddDevice4 = () => {
             }
             return prevDevices;
           });
-
-          // Stop scanning immediately if device name contains "Smart"
-          if (device.name.toLowerCase().includes('smart') && !foundSmartDevice) {
-            foundSmartDevice = true;
-            console.log('Found Smart device, stopping scan...');
-            if (scanTimeout) clearTimeout(scanTimeout);
-            bluetoothManager.stopScan();
-            setIsScanning(false);
-            setShowDeviceList(true);
-          }
         }
-      });
+      }, 10000, 'smart', 400);
 
-      // Stop scanning after 2 seconds if no Smart device found
-      scanTimeout = setTimeout(() => {
-        if (!foundSmartDevice) {
-          console.log('Scan timeout (2s), stopping...');
-          bluetoothManager.stopScan();
-          setIsScanning(false);
-          setShowDeviceList(true);
-        }
-      }, 2000);
-
+      if (scanScreenActive.current) {
+        setIsScanning(false);
+        setShowDeviceList(true);
+      }
     } catch (error) {
       console.error('Bluetooth scanning error:', error);
-      setBluetoothEnabled(false);
-      setShowBluetoothModal(true);
-      setIsScanning(false);
+      if (scanScreenActive.current) {
+        setBluetoothEnabled(false);
+        setShowBluetoothModal(true);
+        setIsScanning(false);
+      }
+    } finally {
+      scanInProgress.current = false;
     }
   };
 
@@ -161,6 +149,8 @@ const AddDevice4 = () => {
       const device = await bluetoothManager.connectToDevice(deviceId);
 
       if (device) {
+        await smartLockService.prepareShieldSession();
+        await smartLockService.notePairedLock();
         // Store the BLE device ID for later use when creating device in backend
         await AsyncStorage.setItem('bleDeviceId', deviceId);
         await AsyncStorage.setItem('bleDeviceName', deviceName);
@@ -183,7 +173,8 @@ const AddDevice4 = () => {
       }
     } catch (error) {
       console.error('Connection error:', error);
-      Alert.alert('Error', 'Failed to connect to the device. Please try again.');
+      const message = error instanceof Error ? error.message : 'Failed to connect to the device. Please try again.';
+      Alert.alert('Error', message);
     } finally {
       setIsConnecting(false);
     }

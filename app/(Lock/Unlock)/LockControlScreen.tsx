@@ -30,12 +30,15 @@ import {
 } from '@/design-system/Lock/Constants';
 import { BottomNavigation } from '@/design-system/Navigation/BottomNavigation';
 import { Typography } from '@/design-system/typography/typography';
-import { LockingProcessState, LockPosition, smartLockService } from '@/src/ble';
+import { LockPosition, smartLockService } from '@/src/ble';
 import { getConnectedDevice, isBluetoothEnabled } from '@/src/ble/bluetoothmanager';
+import { AttemptEvent, commandErrorKind, reduceAttempt } from '@/src/ble/shield/attemptLog';
+import { ShieldIdentityError } from '@/src/ble/shield/errors';
 import apiClient from '@/utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useIsFocused } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
     Alert,
     Animated,
@@ -54,6 +57,23 @@ import Svg, { Circle } from 'react-native-svg';
 // Animated Circle component for the progress ring
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
+// Reconnect has no cancellation/completion API; later instances must wait for earlier ones.
+let screenConnectionWork: Promise<void> = Promise.resolve();
+
+function registeredLockMessage(error: unknown): string {
+  if (error instanceof Error && error.message === 'Reconnect already in progress.') return '';
+  if (error instanceof ShieldIdentityError && (error.kind === 'credentials' || error.kind === 'auth_failed')) {
+    return 'This phone could not authenticate to the registered lock.';
+  }
+  return 'Could not find the registered lock. Make sure it is powered on and nearby.';
+}
+
+function lockedFromPosition(position: number | null): boolean | null {
+  if (position === LockPosition.CLOSED_LOCKED_POSITION || position === LockPosition.JAMMED_LOCKED_POSITION) return true;
+  if (position === LockPosition.CLOSED_UNLOCKED_POSITION || position === LockPosition.JAMMED_UNLOCKED_POSITION) return false;
+  return null;
+}
+
 interface UserData {
   first_name?: string;
   profile_picture?: string;
@@ -61,17 +81,19 @@ interface UserData {
 
 const LockControlScreen: React.FC = () => {
   const params = useLocalSearchParams();
+  const isFocused = useIsFocused();
   // Device name and home name from navigation params (from database)
   const deviceName = params.deviceName as string;
   const homeName = params.homeName as string;
   const deviceId = params.deviceId as string;
-  const bleDeviceId = params.bleDeviceId as string; // BLE MAC address for direct connection
+  const bleDeviceId = params.bleDeviceId as string; // Cached locator, not the lock identity
   const role = params.role === 'owner' || params.role === 'guest' ? params.role : undefined;
 
   // State
   const [isLocked, setIsLocked] = useState<boolean | null>(null); // null = not loaded yet
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isLoadingState, setIsLoadingState] = useState(true);
   const [isHolding, setIsHolding] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -79,9 +101,8 @@ const LockControlScreen: React.FC = () => {
   const [user, setUser] = useState<UserData | null>(null);
   const [batteryLevel, setBatteryLevel] = useState(100);
   const [isDoorClosed, setIsDoorClosed] = useState(true);
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [showBluetoothModal, setShowBluetoothModal] = useState(false);
-  const [deviceBleId, setDeviceBleId] = useState<string | null>(bleDeviceId || null); // Store BLE ID from DB
+  const deviceBleIdRef = useRef<string | null>(bleDeviceId || null);
   const [isBleIdLoaded, setIsBleIdLoaded] = useState(false);
 
   // Animation values
@@ -93,6 +114,19 @@ const LockControlScreen: React.FC = () => {
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLockedRef = useRef<boolean | null>(null);
   const isMountedGlobal = useRef(true); // Global mounted flag to prevent state updates after unmount
+  const focusedRef = useRef(false);
+  const focusGenerationRef = useRef(0);
+  const connectingGenerationRef = useRef<number | null>(null);
+  const connectingRef = useRef(false);
+  const disconnectingRef = useRef(false);
+  const ownedDeviceRef = useRef<ReturnType<typeof getConnectedDevice>>(null);
+  const verifiedConnectionRef = useRef(false);
+  const intentionalDisconnectRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bluetoothIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bluetoothTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commandInFlightRef = useRef(false);
+  const stopTransitionRef = useRef(false);
 
   // Track pending lock action for activity logging
   // We only log success when lockPositionChanged confirms the actual state change
@@ -154,27 +188,6 @@ const LockControlScreen: React.FC = () => {
     loadUserData();
   }, []);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      console.log('🧹 Component unmounting, cleaning up...');
-
-      // Clear any pending timers
-      if (holdTimer.current) {
-        clearTimeout(holdTimer.current);
-        holdTimer.current = null;
-      }
-
-      // Disconnect from device
-      if (smartLockService.isConnected() && getConnectedDevice()?.id === deviceBleId) {
-        console.log('🔌 Disconnecting from device on unmount...');
-        smartLockService.disconnect().catch((error) => {
-          console.error('❌ Error disconnecting on unmount:', error);
-        });
-      }
-    };
-  }, []);
-
   // Request Bluetooth permissions on Android
   useEffect(() => {
     const requestBluetoothPermissions = async () => {
@@ -234,235 +247,257 @@ const LockControlScreen: React.FC = () => {
     requestBluetoothPermissions();
   }, []);
 
-  // Use the BLE ID from params, or fetch it from the API.
+  // The address is only a hint; the service verifies the saved Lock ID and credential.
   useEffect(() => {
     let active = true;
     setIsBleIdLoaded(false);
-    const fetchDeviceBleId = async () => {
+    deviceBleIdRef.current = bleDeviceId || null;
+    const fetchLocator = async () => {
       try {
-        if (bleDeviceId) {
-          if (active) setDeviceBleId(bleDeviceId);
-          return;
+        if (!bleDeviceId && deviceId) {
+          const response = await apiClient.get(`home/devices/${deviceId}/`);
+          if (active) deviceBleIdRef.current = response.data?.ble_device_id || null;
         }
-        if (!deviceId) {
-          if (active) setDeviceBleId(null);
-          return;
-        }
-        console.log('📡 Fetching device details from API for deviceId:', deviceId);
-        const response = await apiClient.get(`home/devices/${deviceId}/`);
-        const deviceData = response.data;
-        if (active) setDeviceBleId(deviceData.ble_device_id || null);
-      } catch (error: any) {
-        console.error('❌ Failed to fetch device BLE ID:', error.message);
+      } catch (error) {
+        console.warn('Could not read the saved Bluetooth locator; the lock can still be scanned.', error);
       } finally {
         if (active) setIsBleIdLoaded(true);
       }
     };
-
-    void fetchDeviceBleId();
+    void fetchLocator();
     return () => { active = false; };
   }, [deviceId, bleDeviceId]);
 
-  // Auto-connect to device on mount
-  useEffect(() => {
-    let isMounted = true;
-
-    const autoConnectToDevice = async () => {
-      if (!isBleIdLoaded) return;
-      // If we don't have BLE ID yet but we have deviceId, wait for API fetch to complete
-      if (!deviceBleId && deviceId && !bleDeviceId) {
-        console.log('⏳ Waiting for BLE device ID to be fetched from API...');
-        return;
+  const openRegisteredLock = useCallback(async (isCurrent: () => boolean) => {
+    // A connection left by another screen is not proof that it is this lock.
+    if (smartLockService.isConnected()) await smartLockService.disconnect();
+    if (!isCurrent()) return false;
+    // Capture the device at the service's authenticated event, not a later owner
+    // that happens to connect to the same peripheral before the promise resumes.
+    let authenticatedDevice: ReturnType<typeof getConnectedDevice> = null;
+    const unsubscribe = smartLockService.on('connected', () => {
+      authenticatedDevice = getConnectedDevice();
+    });
+    let result: Awaited<ReturnType<typeof smartLockService.reconnectRegisteredLock>>;
+    try {
+      result = await smartLockService.reconnectRegisteredLock({
+        backendDeviceId: deviceId,
+        cachedPeripheralId: deviceBleIdRef.current,
+      });
+    } finally {
+      unsubscribe();
+    }
+    const connectedDevice = authenticatedDevice as ReturnType<typeof getConnectedDevice>;
+    if (!isCurrent()) {
+      if (connectedDevice && connectedDevice.id === result.peripheralId && getConnectedDevice() === connectedDevice) {
+        await smartLockService.disconnect();
       }
+      return false;
+    }
+    if (!connectedDevice || connectedDevice.id !== result.peripheralId || getConnectedDevice() !== connectedDevice) {
+      throw new Error('Connection lost during authentication.');
+    }
+    ownedDeviceRef.current = connectedDevice;
+    deviceBleIdRef.current = result.peripheralId;
+    if (result.locatorChanged && deviceId) {
+      void apiClient.patch(`home/devices/${deviceId}/`, { ble_device_id: result.peripheralId }).catch((error) => {
+        console.warn('Authenticated locator saved on this phone; server update failed.', error);
+      });
+    }
+    return true;
+  }, [deviceId]);
 
-      // Check if already connected (e.g., coming from calibration)
-      if (smartLockService.isConnected()) {
-        console.log('✅ Already connected to device');
-        setIsConnected(true);
-
-        // Always set up lock position subscriptions when coming to lock screen
-        // This is safe to call even if some subscriptions exist (e.g., from calibration)
-        // The method clears existing subscriptions first to avoid duplicates
-        console.log('🔔 Setting up lock position subscriptions...');
-        await smartLockService.setupStateSubscriptions();
-
-        // Still need to read initial state since we just arrived at this screen
-        console.log('📖 Reading current lock state...');
-        try {
-          await smartLockService.refreshState();
-          setIsLoadingState(false);
-          console.log('✅ Initial state loaded for already-connected device');
-        } catch (error) {
-          console.error('❌ Failed to read initial state:', error);
-          setIsLoadingState(false);
-        }
-        return;
+  const connectRegisteredLock = useCallback(async (showError = true): Promise<boolean> => {
+    if (connectingRef.current || disconnectingRef.current || !isMountedGlobal.current || !focusedRef.current) return false;
+    const generation = focusGenerationRef.current;
+    const isCurrent = () => isMountedGlobal.current && focusedRef.current &&
+      focusGenerationRef.current === generation && !intentionalDisconnectRef.current;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    connectingRef.current = true;
+    connectingGenerationRef.current = generation;
+    intentionalDisconnectRef.current = false;
+    verifiedConnectionRef.current = false;
+    ownedDeviceRef.current = null;
+    setIsConnecting(true);
+    setIsConnected(false);
+    setIsLoadingState(true);
+    const previousWork = screenConnectionWork;
+    let finishWork: () => void = () => {};
+    screenConnectionWork = new Promise<void>((resolve) => { finishWork = resolve; });
+    try {
+      await previousWork;
+      // Another caller may be reconnecting outside this screen's queue.
+      while (smartLockService.isReconnectInProgress() && isCurrent()) {
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
-
-      // Check if Bluetooth is enabled
-      const btEnabled = await isBluetoothEnabled();
-      if (!btEnabled) {
-        console.log('⚠️ Bluetooth is OFF, showing prompt');
-        setShowBluetoothModal(true);
-        return;
+      if (!isCurrent()) return false;
+      if (!await isBluetoothEnabled()) {
+        if (isCurrent()) setShowBluetoothModal(true);
+        return false;
       }
-
-      setIsConnecting(true);
-      console.log('🔍 Attempting to connect to device...');
-
-      try {
-        // Check if we have BLE device ID
-        if (!deviceBleId) {
-          console.error('❌ No BLE device ID available for connection');
-          const errorMsg = 'Device ID is required for connection. Please re-pair the device.';
-          Alert.alert('Connection Error', errorMsg);
-          setIsConnecting(false);
-          return;
-        }
-
-        // Connect directly using BLE device ID (MAC address)
-        console.log('📡 Connecting to device using BLE ID:', deviceBleId);
-        if (smartLockService.isConnected()) await smartLockService.disconnect();
-        const connected = await smartLockService.connect(deviceBleId);
-
-        if (connected && isMounted) {
-          console.log('✅ Auto-connected successfully');
-          setIsConnected(true);
-          setIsLoadingState(false);
-          setReconnectAttempts(0);
-        } else if (isMounted) {
-          console.log('⚠️ Failed to connect to device');
-          Alert.alert(
-            'Connection Failed',
-            'Could not connect to the device. Please make sure the device is powered on and nearby.',
-            [{ text: 'OK' }]
-          );
-        }
-      } catch (error: any) {
-        console.error('❌ Auto-connect failed:', error);
-        if (isMounted) {
-          Alert.alert(
-            'Connection Error',
-            error.message || 'Failed to connect to device. Please try again.',
-            [{ text: 'OK' }]
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setIsConnecting(false);
-        }
+      if (!isCurrent()) return false;
+      if (!await openRegisteredLock(isCurrent)) return false;
+      if (!isCurrent()) {
+        const ownedDevice = ownedDeviceRef.current;
+        if (ownedDevice && getConnectedDevice() === ownedDevice) await smartLockService.disconnect();
+        if (ownedDeviceRef.current === ownedDevice) ownedDeviceRef.current = null;
+        return false;
       }
-    };
+      if (!smartLockService.isConnected() || getConnectedDevice() !== ownedDeviceRef.current) throw new Error('Connection lost during authentication.');
+      verifiedConnectionRef.current = true;
+      setIsConnected(true);
+      return true;
+    } catch (error) {
+      console.error('Registered lock connection failed:', error);
+      if (isCurrent()) {
+        setIsLocked(null);
+        isLockedRef.current = null;
+        const message = registeredLockMessage(error);
+        if (showError && message) Alert.alert('Connection Error', message, [{ text: 'OK' }]);
+      }
+      return false;
+    } finally {
+      connectingRef.current = false;
+      connectingGenerationRef.current = null;
+      if (isMountedGlobal.current && focusedRef.current) setIsConnecting(false);
+      finishWork();
+    }
+  }, [openRegisteredLock]);
 
-    autoConnectToDevice();
-
-    // Cleanup: disconnect when leaving the screen
+  useLayoutEffect(() => {
+    if (!isFocused) return;
+    focusedRef.current = true;
+    focusGenerationRef.current += 1;
+    intentionalDisconnectRef.current = false;
     return () => {
-      isMounted = false;
+      focusedRef.current = false;
+      focusGenerationRef.current += 1;
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+      if (bluetoothIntervalRef.current) clearInterval(bluetoothIntervalRef.current);
+      bluetoothIntervalRef.current = null;
+      if (bluetoothTimeoutRef.current) clearTimeout(bluetoothTimeoutRef.current);
+      bluetoothTimeoutRef.current = null;
     };
-  }, [deviceName, bleDeviceId, deviceBleId, deviceId, isBleIdLoaded]);
+  }, [isFocused]);
 
-  // Resolving a new local address must not trigger screen-unmount cleanup.
   useEffect(() => {
     isMountedGlobal.current = true;
     return () => {
-      isMountedGlobal.current = false; // Prevent any state updates after unmount
-
-      // Disconnect from device when unmounting
-      if (smartLockService.isConnected()) {
-        console.log('🔌 Disconnecting from device (screen unmount)...');
-        smartLockService.disconnect().catch((error) => {
-          console.error('❌ Disconnect error on unmount:', error);
+      isMountedGlobal.current = false;
+      intentionalDisconnectRef.current = true;
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (bluetoothIntervalRef.current) clearInterval(bluetoothIntervalRef.current);
+      if (bluetoothTimeoutRef.current) clearTimeout(bluetoothTimeoutRef.current);
+      // Check ownership again when cleanup starts, after earlier screen work finishes.
+      const ownedDevice = ownedDeviceRef.current;
+      if (!connectingRef.current && !disconnectingRef.current && ownedDevice) {
+        const cleanup = screenConnectionWork.then(async () => {
+          if (getConnectedDevice() === ownedDevice) await smartLockService.disconnect();
+        });
+        screenConnectionWork = cleanup.catch((error) => {
+          console.error('Disconnect during cleanup failed:', error);
         });
       }
     };
   }, []);
 
-  // Monitor BLE connection state and auto-retry on disconnect
   useEffect(() => {
-    let isMounted = true;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const attemptReconnect = async () => {
-      if (!isMounted || isConnecting) return;
-
-      console.log(`🔄 Auto-reconnect attempt ${reconnectAttempts + 1}...`);
-      setIsConnecting(true);
-      setReconnectAttempts(prev => prev + 1);
-
-      try {
-        // Try BLE device ID if available
-        if (deviceBleId) {
-          console.log('📡 Reconnecting using BLE ID:', deviceBleId);
-          const connected = await smartLockService.connect(deviceBleId);
-
-          if (connected && isMounted) {
-            console.log('✅ Reconnected successfully using BLE ID');
-            setIsConnected(true);
-            setReconnectAttempts(0);
-            return;
-          } else {
-            console.warn('⚠️ Reconnect with BLE ID failed');
-          }
-        } else {
-          console.error('❌ No BLE device ID available for reconnection');
-        }
-      } catch (error) {
-        console.error('❌ Reconnect failed:', error);
-      } finally {
-        if (isMounted) {
-          setIsConnecting(false);
-        }
+    if (!isFocused || !isBleIdLoaded) return;
+    const generation = focusGenerationRef.current;
+    let active = true;
+    const restoreConnection = async () => {
+      // A previous focus generation may still be authenticating or cleaning up.
+      await screenConnectionWork;
+      if (!active || !isMountedGlobal.current || !focusedRef.current ||
+          focusGenerationRef.current !== generation || intentionalDisconnectRef.current) return;
+      if (verifiedConnectionRef.current && ownedDeviceRef.current &&
+          getConnectedDevice() === ownedDeviceRef.current && smartLockService.isConnected()) {
+        const state = smartLockService.getState();
+        const locked = lockedFromPosition(state.lockPosition);
+        setIsConnected(true);
+        setIsLocked(locked);
+        isLockedRef.current = locked;
+        setIsDoorClosed(state.doorState !== 2);
+        setBatteryLevel(state.batteryLevel);
+        setIsLoadingState(false);
+        return;
       }
+      void connectRegisteredLock();
     };
+    void restoreConnection();
+    return () => { active = false; };
+  }, [isFocused, isBleIdLoaded, connectRegisteredLock]);
 
-    const updateConnectionState = () => {
-      if (isMounted) {
-        const connected = !!deviceBleId
-          && getConnectedDevice()?.id === deviceBleId
-          && smartLockService.isConnected();
-        const wasConnected = isConnected;
-        setIsConnected(connected);
-
-        // If we just got disconnected and we're still on this screen, try to reconnect
-        if (wasConnected && !connected && reconnectAttempts < 5) {
-          console.log('⚠️ Connection lost, will attempt to reconnect in 3s...');
-          retryTimer = setTimeout(() => {
-            attemptReconnect();
-          }, 3000);
-        }
-      }
+  // Only an authenticated connection can enable the controls. Retry unexpected losses.
+  useEffect(() => {
+    if (!isFocused) return;
+    let active = true;
+    const retry = (attempt: number) => {
+      if (!active || !focusedRef.current || intentionalDisconnectRef.current || attempt > 5) return;
+      retryTimerRef.current = setTimeout(async () => {
+        if (!active || !focusedRef.current || intentionalDisconnectRef.current || verifiedConnectionRef.current) return;
+        const connected = await connectRegisteredLock(attempt === 5);
+        if (!connected && active && focusedRef.current && !intentionalDisconnectRef.current) retry(attempt + 1);
+      }, 3000);
     };
-
-    // Check initial state
-    updateConnectionState();
-
-    // Listen for connection/disconnection events
-    const unsubConnected = smartLockService.on('connected', updateConnectionState);
-    const unsubDisconnected = smartLockService.on('disconnected', updateConnectionState);
-    const unsubError = smartLockService.on('error', updateConnectionState);
-
+    const onDisconnected = () => {
+      if (!active || !focusedRef.current || !verifiedConnectionRef.current || smartLockService.isConnected()) return;
+      verifiedConnectionRef.current = false;
+      ownedDeviceRef.current = null;
+      setIsConnected(false);
+      setIsLocked(null);
+      isLockedRef.current = null;
+      setIsLoadingState(true);
+      if (!intentionalDisconnectRef.current) retry(1);
+    };
+    const unsubDisconnected = smartLockService.on('disconnected', onDisconnected);
+    const unsubError = smartLockService.on('error', onDisconnected);
     return () => {
-      isMounted = false;
-      if (retryTimer) clearTimeout(retryTimer);
-      unsubConnected();
+      active = false;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       unsubDisconnected();
       unsubError();
     };
-  }, [isConnected, isConnecting, reconnectAttempts, deviceBleId]);
+  }, [isFocused, connectRegisteredLock]);
+
+  const applyAttempt = useCallback((event: AttemptEvent) => {
+    const reduced = reduceAttempt({ pending: pendingActionRef.current }, event);
+    pendingActionRef.current = reduced.state.pending;
+    if (reduced.stopTransition) {
+      stopTransitionRef.current = true;
+      if (!commandInFlightRef.current && isMountedGlobal.current) setIsTransitioning(false);
+    }
+    for (const entry of reduced.logs) {
+      if (entry.type === 'success') {
+        void logLockActivity(entry.action, 'bluetooth');
+      } else {
+        void logLockActivity('log_failed_attempt', 'bluetooth', entry.message);
+      }
+    }
+  }, [logLockActivity]);
 
   // Listen to lock state changes from device
   useEffect(() => {
+    if (!isFocused) return;
     let isMounted = true;
+    const canApplyState = () => isMounted && isMountedGlobal.current && focusedRef.current &&
+      !intentionalDisconnectRef.current &&
+      (connectingGenerationRef.current === focusGenerationRef.current ||
+        (connectingGenerationRef.current === null && verifiedConnectionRef.current &&
+          ownedDeviceRef.current !== null && getConnectedDevice() === ownedDeviceRef.current));
 
     // Listen for initial state loaded event (after connection reads from device)
     const unsubInitialState = smartLockService.on('initialStateLoaded', (data) => {
-      if (isMounted) {
+      if (canApplyState()) {
         const state = data.state;
         // Consider both CLP (2) and JLP (4) as LOCKED
         // Consider both CULP (3) and JULP (5) as UNLOCKED
-        const locked = state.lockPosition === LockPosition.CLOSED_LOCKED_POSITION ||
-                      state.lockPosition === LockPosition.JAMMED_LOCKED_POSITION;
+        const locked = lockedFromPosition(state.lockPosition);
         setIsLocked(locked);
         isLockedRef.current = locked;
         setIsDoorClosed(state.doorState !== 2); // 2 = OPEN
@@ -474,86 +509,43 @@ const LockControlScreen: React.FC = () => {
 
     // Listen for lock position changes from device - update immediately
     const unsubLockPos = smartLockService.on('lockPositionChanged', (data) => {
-      if (isMounted) {
+      if (canApplyState()) {
         const position = data.lockPosition;
         // CLP (2) or JLP (4) = LOCKED
         // CULP (3) or JULP (5) = UNLOCKED
-        const locked = position === LockPosition.CLOSED_LOCKED_POSITION ||
-                      position === LockPosition.JAMMED_LOCKED_POSITION;
+        const locked = lockedFromPosition(position);
+        if (locked === null) return;
 
         console.log('🔒 Lock position changed:', locked ? 'LOCKED' : 'UNLOCKED', `(value: ${position})`);
 
-        // Check if we have a pending action to log
-        const pending = pendingActionRef.current;
-        if (pending) {
-          const expectedLocked = pending.action === 'lock';
-          const stateActuallyChanged = locked !== pending.preActionLocked;
-          const changedToExpectedState = locked === expectedLocked;
-
-          console.log(`📝 Pending action: ${pending.action}, pre-state: ${pending.preActionLocked ? 'LOCKED' : 'UNLOCKED'}, current: ${locked ? 'LOCKED' : 'UNLOCKED'}`);
-          console.log(`📝 State changed: ${stateActuallyChanged}, changed to expected: ${changedToExpectedState}`);
-
-          if (stateActuallyChanged && changedToExpectedState) {
-            // SUCCESS: Lock actually changed to the expected state
-            console.log(`✅ Lock actually ${pending.action}ed - logging success`);
-            logLockActivity(pending.action, 'bluetooth');
-          } else if (!stateActuallyChanged) {
-            // FAILED: State didn't change at all
-            console.log(`❌ Lock state didn't change - logging failed attempt`);
-            logLockActivity('log_failed_attempt', 'bluetooth', `Attempted to ${pending.action} but lock state remained ${locked ? 'locked' : 'unlocked'}`);
-          }
-          // Note: If state changed but not to expected (weird edge case), we don't log
-
-          // Clear pending action
-          pendingActionRef.current = null;
-        }
+        void applyAttempt({ type: 'position', locked });
 
         // Update both state and ref immediately
         setIsLocked(locked);
         isLockedRef.current = locked;
         setIsLoadingState(false);
-        setIsTransitioning(false);
       }
     });
 
     // Listen for locking process state to handle command feedback
     const unsubLockProcess = smartLockService.on('lockingProcessStateChanged', (data) => {
-      if (isMounted) {
+      if (canApplyState()) {
         console.log('🔄 Locking process state:', data.state, '(2=SUCCESS, 3=FAILED, 4=IN_PROGRESS)');
 
-        const pending = pendingActionRef.current;
-
-        if (data.state === LockingProcessState.SUCCESS && pending) {
-          // SUCCESS notification received - the lock will change position
-          console.log('✅ Lock operation SUCCESS notification received');
-          // Keep waiting for position change to confirm and log
-          // Don't clear pending action yet - let position change handle logging
-        } else if (data.state === LockingProcessState.FAILED) {
-          console.log('❌ Lock operation FAILED notification received');
-          setIsTransitioning(false);
-
-          // Log the failure immediately based on the status attribute
-          if (pending) {
-            logLockActivity('log_failed_attempt', 'bluetooth', `Lock ${pending.action} failed - device reported failure`);
-            pendingActionRef.current = null;
-          }
-        } else if (data.state === LockingProcessState.IN_PROGRESS) {
-          console.log('⏳ Lock operation IN_PROGRESS');
-          // Keep transitioning state
-        }
+        void applyAttempt({ type: 'process', state: data.state });
       }
     });
 
     // Listen for door state changes
     const unsubDoor = smartLockService.on('doorStateChanged', (data) => {
-      if (isMounted) {
+      if (canApplyState()) {
         setIsDoorClosed(data.doorState !== 2);
       }
     });
 
     // Listen for battery level changes
     const unsubBattery = smartLockService.on('batteryLevelChanged', (data) => {
-      if (isMounted) {
+      if (canApplyState()) {
         setBatteryLevel(data.batteryLevel);
       }
     });
@@ -566,7 +558,7 @@ const LockControlScreen: React.FC = () => {
       unsubDoor();
       unsubBattery();
     };
-  }, []);
+  }, [isFocused, applyAttempt]);
 
   // Pulse animation for the lock button
   useEffect(() => {
@@ -590,32 +582,6 @@ const LockControlScreen: React.FC = () => {
 
     return () => pulse.stop();
   }, [pulseAnim]);
-
-  // Handle press in (start holding)
-  const handlePressIn = useCallback(() => {
-    if (isTransitioning || !isConnected || isLoadingState || isLocked === null) return;
-
-    setIsHolding(true);
-
-    // Start progress animation
-    Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: LockAnimationConstants.HOLD_DURATION,
-      easing: Easing.linear,
-      useNativeDriver: false,
-    }).start();
-
-    // Scale down slightly when pressed
-    Animated.spring(scaleAnim, {
-      toValue: 0.95,
-      useNativeDriver: true,
-    }).start();
-
-    // Set timer for hold completion
-    holdTimer.current = setTimeout(() => {
-      handleHoldComplete();
-    }, LockAnimationConstants.HOLD_DURATION);
-  }, [isConnected, isTransitioning, isLoadingState, progressAnim, scaleAnim]);
 
   // Handle press out (stop holding)
   const handlePressOut = useCallback(() => {
@@ -661,7 +627,14 @@ const LockControlScreen: React.FC = () => {
     try {
       // Use ref to get the CURRENT lock state (not stale closure value)
       const currentlyLocked = isLockedRef.current;
+      if (currentlyLocked === null || !verifiedConnectionRef.current) {
+        setIsTransitioning(false);
+        return;
+      }
       const actionType = currentlyLocked ? 'unlock' : 'lock';
+      pendingActionRef.current = { action: actionType, preActionLocked: currentlyLocked };
+      commandInFlightRef.current = true;
+      stopTransitionRef.current = false;
       console.log(`🔐 Current lock state (from ref): ${currentlyLocked ? 'LOCKED' : 'UNLOCKED'}, sending ${actionType.toUpperCase()} command`);
 
       const result = currentlyLocked
@@ -670,32 +643,34 @@ const LockControlScreen: React.FC = () => {
 
       console.log('🔐 Lock command result:', result);
 
-      if (result === LockingProcessState.SUCCESS || result === LockingProcessState.IN_PROGRESS) {
-        console.log('✅ Lock command written successfully - waiting for status and position change confirmation...');
-        // Wait for lockingProcessStateChanged or lockPositionChanged events
-        // Store the pending action so the event handlers can log it
-        pendingActionRef.current = {
-          action: actionType,
-          preActionLocked: currentlyLocked ?? false,
-        };
-
-        // State will be updated via lockingProcessStateChanged or lockPositionChanged events
-      } else if (result === LockingProcessState.FAILED) {
-        console.error('❌ Lock command write failed immediately');
-        // Log failed attempt to backend - BLE write itself failed
-        await logLockActivity('log_failed_attempt', 'bluetooth', `Failed to write ${actionType} command to device`);
-        setIsTransitioning(false);
-      }
-      // IN_PROGRESS and other states handled by lockingProcessStateChanged and lockPositionChanged subscriptions
-    } catch (error: any) {
+      applyAttempt({ type: 'command_settled', result });
+    } catch (error: unknown) {
       console.error('❌ Lock command error:', error);
-      // Log failed attempt to backend
-      const currentlyLocked = isLockedRef.current;
-      const actionType = currentlyLocked ? 'unlock' : 'lock';
-      await logLockActivity('log_failed_attempt', 'bluetooth', `Error during ${actionType}: ${error.message || 'Unknown error'}`);
-      setIsTransitioning(false);
+      applyAttempt({ type: 'command_settled', result: null, errorKind: commandErrorKind(error) });
+    } finally {
+      commandInFlightRef.current = false;
+      if (stopTransitionRef.current && isMountedGlobal.current) setIsTransitioning(false);
     }
-  }, [isLocked, progressAnim, scaleAnim, logLockActivity]);
+  }, [progressAnim, scaleAnim, applyAttempt]);
+
+  // Handle press in (start holding)
+  const handlePressIn = useCallback(() => {
+    if (commandInFlightRef.current || isTransitioning || !isConnected || isLoadingState || isLocked === null) return;
+    setIsHolding(true);
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: LockAnimationConstants.HOLD_DURATION,
+      easing: Easing.linear,
+      useNativeDriver: false,
+    }).start();
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      useNativeDriver: true,
+    }).start();
+    holdTimer.current = setTimeout(() => {
+      handleHoldComplete();
+    }, LockAnimationConstants.HOLD_DURATION);
+  }, [isConnected, isTransitioning, isLoadingState, isLocked, progressAnim, scaleAnim, handleHoldComplete]);
 
   // Handle back navigation
   const isNavigatingBack = useRef(false);
@@ -709,6 +684,10 @@ const LockControlScreen: React.FC = () => {
 
     isNavigatingBack.current = true;
     isMountedGlobal.current = false; // Prevent any state updates during navigation
+    focusGenerationRef.current += 1;
+    intentionalDisconnectRef.current = true;
+    verifiedConnectionRef.current = false;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
 
     try {
       console.log('🔙 Back button pressed, cleaning up...');
@@ -719,12 +698,15 @@ const LockControlScreen: React.FC = () => {
         holdTimer.current = null;
       }
 
-      // Disconnect from device if connected
-      if (smartLockService.isConnected()) {
-        console.log('🔌 Disconnecting from device...');
-        await smartLockService.disconnect();
-        console.log('✅ Disconnected successfully');
-      }
+      // Wait for in-flight authentication and disconnect only this screen's device.
+      const ownedDevice = ownedDeviceRef.current;
+      const cleanup = screenConnectionWork.then(async () => {
+        if (ownedDevice && getConnectedDevice() === ownedDevice) await smartLockService.disconnect();
+      });
+      screenConnectionWork = cleanup.catch((error) => {
+        console.error('Disconnect during back navigation failed:', error);
+      });
+      await screenConnectionWork;
 
       // Small delay to ensure disconnect completes
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -740,6 +722,10 @@ const LockControlScreen: React.FC = () => {
 
   // Handle Bluetooth modal actions
   const handleTurnOnBluetooth = async () => {
+    const generation = focusGenerationRef.current;
+    const isCurrent = () => isMountedGlobal.current && focusedRef.current &&
+      focusGenerationRef.current === generation && !intentionalDisconnectRef.current;
+    if (!isCurrent()) return;
     setShowBluetoothModal(false);
     console.log('🔵 Opening Bluetooth settings...');
 
@@ -750,33 +736,27 @@ const LockControlScreen: React.FC = () => {
       } else {
         await Linking.sendIntent('android.settings.BLUETOOTH_SETTINGS');
       }
+      if (!isCurrent()) return;
 
       // Monitor for Bluetooth being enabled and auto-retry connection
-      const checkInterval = setInterval(async () => {
+      if (bluetoothIntervalRef.current) clearInterval(bluetoothIntervalRef.current);
+      if (bluetoothTimeoutRef.current) clearTimeout(bluetoothTimeoutRef.current);
+      bluetoothIntervalRef.current = setInterval(async () => {
         const btEnabled = await isBluetoothEnabled();
-        if (btEnabled) {
-          clearInterval(checkInterval);
+        if (btEnabled && isCurrent() && bluetoothIntervalRef.current) {
+          clearInterval(bluetoothIntervalRef.current);
+          bluetoothIntervalRef.current = null;
+          if (bluetoothTimeoutRef.current) clearTimeout(bluetoothTimeoutRef.current);
           console.log('✅ Bluetooth enabled, retrying connection...');
-
-          if (deviceBleId) {
-            setIsConnecting(true);
-            try {
-              const connected = await smartLockService.connect(deviceBleId);
-              if (connected) {
-                console.log('✅ Connected after Bluetooth enabled');
-                setIsConnected(true);
-              }
-            } catch (error) {
-              console.error('❌ Connection failed after Bluetooth enabled:', error);
-            } finally {
-              setIsConnecting(false);
-            }
-          }
+          void connectRegisteredLock();
         }
       }, 1000);
 
       // Stop checking after 30 seconds
-      setTimeout(() => clearInterval(checkInterval), 30000);
+      bluetoothTimeoutRef.current = setTimeout(() => {
+        if (bluetoothIntervalRef.current) clearInterval(bluetoothIntervalRef.current);
+        bluetoothIntervalRef.current = null;
+      }, 30000);
     } catch (error) {
       console.error('❌ Failed to open Bluetooth settings:', error);
     }
@@ -788,47 +768,8 @@ const LockControlScreen: React.FC = () => {
 
   // Handle manual reconnect
   const handleReconnect = async () => {
-    if (isConnecting) return;
-
-    if (!deviceBleId) {
-      Alert.alert(
-        'Connection Error',
-        'Device ID is not available. Please re-pair the device.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    console.log('🔄 Manual reconnect requested');
-    setReconnectAttempts(0); // Reset attempts on manual retry
-    setIsConnecting(true);
-
-    try {
-      // Connect directly using BLE device ID
-      console.log('📡 Manual reconnect using BLE ID:', deviceBleId);
-      const connected = await smartLockService.connect(deviceBleId);
-
-      if (connected) {
-        console.log('✅ Manually reconnected successfully');
-        setIsConnected(true);
-        // State will be loaded via initialStateLoaded event from connect()
-      } else {
-        Alert.alert(
-          'Connection Failed',
-          'Could not connect to the device. Please make sure the device is powered on and nearby.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error: any) {
-      console.error('❌ Manual reconnect failed:', error);
-      Alert.alert(
-        'Connection Error',
-        error.message || 'Failed to connect to device. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsConnecting(false);
-    }
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    await connectRegisteredLock();
   };
 
   // Handle menu item press - placeholders for now
@@ -916,17 +857,44 @@ const LockControlScreen: React.FC = () => {
 
 
   const connected = isConnected;
-  const busy = isConnecting || isTransitioning || !isBleIdLoaded;
+  const busy = isConnecting || isDisconnecting || isTransitioning || !isBleIdLoaded;
   const lock = { name: deviceName || 'Lock' };
   const loading = !isBleIdLoaded;
   const unlocked = isConnected && isLocked === false;
   const lockKnown = isConnected && !isLoadingState && isLocked !== null;
   const isOwner = role !== 'guest';
-  const statusTitle = isConnecting ? 'Connecting…' : !isConnected ? 'Disconnected' : isTransitioning ? operationAction === 'lock' ? 'Locking…' : 'Unlocking…' : !lockKnown ? 'Reading lock…' : isLocked ? 'Locked' : 'Unlocked';
+  const statusTitle = isDisconnecting ? 'Disconnecting…' : isConnecting ? 'Connecting…' : !isConnected ? 'Disconnected' : isTransitioning ? operationAction === 'lock' ? 'Locking…' : 'Unlocking…' : !lockKnown ? 'Reading lock…' : isLocked ? 'Locked' : 'Unlocked';
   const statusHint = !isConnected ? 'Tap the lock to connect via Bluetooth' : isTransitioning ? 'Keep your phone close while the lock moves' : !lockKnown ? 'Reading the lock state' : isLocked ? LockControlConstants.holdToUnlock : LockControlConstants.holdToLock;
   const pulseStyle = { transform: [{ scale: pulseAnim }] };
   const onHeroPress = () => { if (!isConnected) void handleReconnect(); };
-  const disconnect = () => { void smartLockService.disconnect(); };
+  const disconnect = async () => {
+    if (disconnectingRef.current || connectingRef.current) return;
+    disconnectingRef.current = true;
+    setIsDisconnecting(true);
+    intentionalDisconnectRef.current = true;
+    verifiedConnectionRef.current = false;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    const previousWork = screenConnectionWork;
+    let finishWork: () => void = () => {};
+    screenConnectionWork = new Promise<void>((resolve) => { finishWork = resolve; });
+    try {
+      await previousWork;
+      if (ownedDeviceRef.current && getConnectedDevice() === ownedDeviceRef.current) {
+        await smartLockService.disconnect();
+      }
+    } finally {
+      finishWork();
+      ownedDeviceRef.current = null;
+      disconnectingRef.current = false;
+      if (isMountedGlobal.current) {
+        setIsConnected(false);
+        setIsLocked(null);
+        isLockedRef.current = null;
+        setIsLoadingState(true);
+        setIsDisconnecting(false);
+      }
+    }
+  };
   const connect = handleReconnect;
   const battery = isConnected ? batteryLevel : null;
   const error = '';

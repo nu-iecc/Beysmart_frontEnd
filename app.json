@@ -75,7 +75,15 @@
           "faceIDPermission": "BeySmart uses biometric authentication to securely log you in without needing to enter your password."
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -16,6 +16,7 @@ import TextField from '../../design-system/inputs/TextField';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
 import { Typography } from '../../design-system/typography/typography';
+import { loadPendingLock, saveDeviceBinding } from '../../src/ble/shield/store';
 import apiClient from '../../utils/api';
 
 interface Home {
@@ -172,6 +173,14 @@ const AddDevice8 = () => {
 
       console.log('Device created successfully:', response.data);
       console.log('Device Token:', response.data.tb_device_token);
+
+      const pendingLockId = await loadPendingLock();
+      if (pendingLockId && bleDeviceId && response.data?.id != null) {
+        await saveDeviceBinding(String(response.data.id), {
+          lockIdHex: pendingLockId,
+          peripheralId: bleDeviceId,
+        });
+      }
 
       // Find the selected home name for display
       const selectedHomeName = homes.find(home => home.id === selectedHome)?.name || selectedHome;

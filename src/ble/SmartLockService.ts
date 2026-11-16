@@ -19,6 +19,17 @@ import {
   writeAndWaitForStateUpdate,
   writeCharacteristic
 } from './bluetoothmanager';
+import { ShieldCommandError, ShieldIdentityError } from './shield/errors';
+import {
+  beginReconnect,
+  nextReconnectStep,
+  noteProbe,
+  noteScan,
+  ProbeOutcome,
+} from './shield/reconnect';
+import { shieldSession, ShieldStatus } from './shield/session';
+import { resolveExpectedLock, saveDeviceBinding, rememberPendingLock, loadDeviceBinding } from './shield/store';
+import { SHIELD_OP } from './shield/uuids';
 import {
   BleDevice,
   CalibrationProcessState,
@@ -52,6 +63,8 @@ export type SmartLockEventCallback = (data: any) => void;
  */
 class SmartLockService {
   private static instance: SmartLockService;
+  private reconnecting = false;
+  private ignoreDisconnects = false;
   private eventListeners: Map<SmartLockEventType, Set<SmartLockEventCallback>> = new Map();
   private subscriptionIds: string[] = [];
   private hasLockPositionSubscription: boolean = false; // Track if 0xAA01 is subscribed
@@ -68,7 +81,11 @@ class SmartLockService {
     // Register callback to handle unexpected disconnections from bluetoothmanager
     setDisconnectionCallback(() => {
       console.log('🔔 SmartLockService: Received disconnection notification from BLE layer');
+      shieldSession.onTransportLost();
       this.currentState.isConnected = false;
+      this.hasLockPositionSubscription = false;
+      this.hasBatterySubscription = false;
+      if (this.ignoreDisconnects) return;
       this.emit('disconnected', {});
     });
   }
@@ -147,31 +164,150 @@ class SmartLockService {
    * Connect to a Smart Lock device
    */
   public async connect(deviceId: string): Promise<boolean> {
-    try {
-      await connectToDevice(deviceId);
-      
-      console.log('📖 Step 1: Reading initial lock state from device...');
-      // FIRST: Read initial state from the device (0xAA01, 0xAA02, 0xCC01)
-      await this.refreshState();
-      
-      console.log('🔔 Step 2: Setting up lock position subscription (0xAA01)...');
-      // THEN: Setup state subscriptions for real-time updates
-      await this.setupStateSubscriptions();
-      
-      this.currentState.isConnected = true;
-      
-      // Emit initial state loaded event
-      console.log('✅ Connection complete. Initial state:', 
-        this.currentState.lockPosition === LockPosition.CLOSED_LOCKED_POSITION ? 'LOCKED' : 'UNLOCKED');
-      this.emit('connected', { deviceId });
-      this.emit('initialStateLoaded', { state: { ...this.currentState } });
-      
-      return true;
-    } catch (error) {
-      console.error('Connection failed:', error);
-      this.emit('error', { type: 'connection', error });
-      return false;
+    await connectToDevice(deviceId);
+    await this.prepareShieldSession();
+    this.emit('connected', { deviceId });
+    return true;
+  }
+
+  /**
+   * Find the already registered lock. The cached Bluetooth address is only a hint.
+   * The permanent identity is the Lock ID from ProtocolInfo.
+   */
+  public async reconnectRegisteredLock(input: {
+    backendDeviceId?: string;
+    cachedPeripheralId?: string | null;
+  }): Promise<{ peripheralId: string; lockIdHex: string; locatorChanged: boolean }> {
+    if (this.reconnecting) {
+      throw new Error('Reconnect already in progress.');
     }
+    const expectedLockIdHex = await resolveExpectedLock(input.backendDeviceId);
+    if (!expectedLockIdHex) {
+      throw new ShieldIdentityError('No saved credential for this lock.', 'credentials');
+    }
+    const binding = input.backendDeviceId ? await loadDeviceBinding(input.backendDeviceId) : null;
+    const cachedPeripheralId = binding?.peripheralId ?? input.cachedPeripheralId ?? null;
+    this.reconnecting = true;
+    let progress = beginReconnect(cachedPeripheralId, expectedLockIdHex);
+    try {
+      while (true) {
+        const step = nextReconnectStep(progress);
+        if (step.action === 'restored') {
+          if (input.backendDeviceId) {
+            await saveDeviceBinding(input.backendDeviceId, {
+              lockIdHex: expectedLockIdHex,
+              peripheralId: step.peripheralId,
+            });
+          }
+          this.emit('connected', { deviceId: step.peripheralId });
+          return {
+            peripheralId: step.peripheralId,
+            lockIdHex: expectedLockIdHex,
+            locatorChanged: step.locatorChanged,
+          };
+        }
+        if (step.action === 'stop') {
+          throw new ShieldIdentityError(
+            'Could not find the registered lock.',
+            'identity_mismatch'
+          );
+        }
+        if (step.action === 'scan') {
+          console.log('🔍 Cached Bluetooth locator missed. Scanning for the registered lock.');
+          progress = noteScan(progress, await this.scanShieldPeripherals(4000));
+          continue;
+        }
+        const locatorAttempt = step.peripheralId === cachedPeripheralId;
+        const outcome = await this.probeRegisteredLock(
+          step.peripheralId,
+          expectedLockIdHex,
+          locatorAttempt ? 4000 : 10000
+        );
+        if (outcome === 'credentials' || outcome === 'auth_failed') {
+          throw new ShieldIdentityError(
+            outcome === 'credentials'
+              ? 'No saved credential for this lock.'
+              : 'The registered lock rejected the saved credential.',
+            outcome
+          );
+        }
+        progress = noteProbe(progress, step.peripheralId, outcome);
+      }
+    } finally {
+      this.reconnecting = false;
+      this.ignoreDisconnects = false;
+    }
+  }
+
+  public isReconnectInProgress(): boolean {
+    return this.reconnecting;
+  }
+
+  public async notePairedLock(): Promise<void> {
+    const lockIdHex = shieldSession.getLockIdHex();
+    if (lockIdHex) await rememberPendingLock(lockIdHex);
+  }
+
+  private async scanShieldPeripherals(timeoutMs: number): Promise<string[]> {
+    const ids: string[] = [];
+    await scanForDevices((device) => {
+      if (!ids.includes(device.id)) ids.push(device.id);
+    }, timeoutMs, 'smart', 400);
+    return ids.slice(0, 8);
+  }
+
+  private async probeRegisteredLock(
+    peripheralId: string,
+    expectedLockIdHex: string,
+    timeoutMs = 10000
+  ): Promise<ProbeOutcome> {
+    this.ignoreDisconnects = false;
+    try {
+      console.log(`🔗 Trying lock candidate ${peripheralId}`);
+      await connectToDevice(peripheralId, timeoutMs);
+      await this.prepareShieldSession({ expectedLockIdHex, allowClaim: false });
+      console.log(`✅ Registered lock authenticated at ${peripheralId}`);
+      return 'authenticated';
+    } catch (error) {
+      await this.abandonCandidate();
+      if (error instanceof ShieldIdentityError) {
+        console.log(`↩️ Candidate ${peripheralId} ${error.kind}`);
+        return error.kind;
+      }
+      console.log(`↩️ Candidate ${peripheralId} unavailable`);
+      return 'unavailable';
+    }
+  }
+
+  private async abandonCandidate(): Promise<void> {
+    this.ignoreDisconnects = true;
+    try {
+      await disconnectFromDevice();
+    } catch (error) {
+      console.log('Candidate disconnect failed', error);
+    }
+    shieldSession.onTransportLost();
+  }
+
+  /**
+   * Claim or authenticate the connected lock with the test K_setup.
+   * Call this after a low-level connect during device setup.
+   */
+  public async prepareShieldSession(options?: {
+    expectedLockIdHex?: string;
+    allowClaim?: boolean;
+  }): Promise<void> {
+    shieldSession.setProcessHandler((outcome) => {
+      if (
+        outcome === LockingProcessState.SUCCESS ||
+        outcome === LockingProcessState.FAILED ||
+        outcome === LockingProcessState.IN_PROGRESS
+      ) {
+        this.emit('lockingProcessStateChanged', { state: outcome });
+      }
+    });
+    await shieldSession.prepare((status, source) => this.applyShieldStatus(status, source), options);
+    this.currentState.isConnected = true;
   }
 
   /**
@@ -216,6 +352,12 @@ class SmartLockService {
    * Process State (0xAA04) is subscribed only when sending lock/unlock commands
    */
   public async setupStateSubscriptions(): Promise<void> {
+    if (shieldSession.isLive()) {
+      this.hasLockPositionSubscription = true;
+      this.hasBatterySubscription = true;
+      console.log('🔔 Shield session is live. Lock state arrives as encrypted events.');
+      return;
+    }
     try {
       // Check if we already have lock position subscription active
       if (this.hasLockPositionSubscription && this.hasBatterySubscription) {
@@ -300,6 +442,10 @@ class SmartLockService {
    * Refresh current state from device
    */
   public async refreshState(): Promise<SmartLockState> {
+    if (shieldSession.isLive()) {
+      await shieldSession.status();
+      return { ...this.currentState };
+    }
     try {
       console.log('📖 Reading lock position from 0xAA01...');
       // Read lock position
@@ -348,6 +494,31 @@ class SmartLockService {
     }
   }
 
+  private applyShieldStatus(status: ShieldStatus, source: 'status' | 'event'): void {
+    if (status.lock !== 0xff && status.lock !== 0x00) {
+      this.currentState.lockPosition = status.lock as LockPosition;
+      this.currentState.lastUpdated = new Date();
+      this.emit('lockPositionChanged', { lockPosition: this.currentState.lockPosition });
+    } else if (source === 'status') {
+      this.currentState.lockPosition = LockPosition.UNKNOWN;
+    }
+    if (source === 'event') {
+      return;
+    }
+    if (status.door === 0x00) {
+      this.currentState.doorState = DoorState.OPEN;
+    } else if (status.door === 0x01) {
+      this.currentState.doorState = DoorState.CLOSED;
+    } else {
+      this.currentState.doorState = DoorState.UNKNOWN;
+    }
+    // SmartLockState has no unknown battery value; use its existing default.
+    this.currentState.batteryLevel = status.battery ?? 0;
+    this.currentState.isConnected = true;
+    this.currentState.lastUpdated = new Date();
+    this.emit('initialStateLoaded', { state: { ...this.currentState } });
+  }
+
   /**
    * Get current state (cached)
    */
@@ -374,31 +545,28 @@ class SmartLockService {
   }
 
   /**
-   * Send lock command
-   * The lock position changes will come via 0xAA01 notifications
+   * Send a Shield lock or unlock command.
+   * Completion comes from process event 0x8003 (2 success, 3 failed, 4 in progress).
+   * Position comes from event 0x8001 as soon as it arrives.
    */
   private async sendLockCommand(command: LockCommand): Promise<LockingProcessState> {
+    const opcode = command === LockCommand.LOCK ? SHIELD_OP.LOCK : SHIELD_OP.UNLOCK_NO_LATCH;
+    const label = opcode === SHIELD_OP.LOCK ? 'LOCK' : 'UNLOCK_NO_LATCH';
+    console.log(`🔒 Sending ${label}`);
+    const { outcome } = await shieldSession.physicalAction(opcode);
     try {
-      console.log(`🔒 Sending lock command: ${command === LockCommand.LOCK ? 'LOCK (2)' : 'UNLOCK (3)'}`);
-      
-      // Send the lock/unlock command to 0xAA03
-      await writeCharacteristic(
-        FULL_UUIDS.LOCK_CONTROL_SERVICE,
-        FULL_UUIDS.LOCK_CONTROL,
-        new Uint8Array([command])
-      );
-
-      console.log(`✅ Lock command sent to 0xAA03 - waiting for position update from 0xAA01`);
-      
-      // The actual state change will be detected via lockPositionChanged event from 0xAA01
-      // Just return success - the UI will update when it receives the position notification
-      return LockingProcessState.SUCCESS;
-      
+      await this.refreshState();
     } catch (error) {
-      console.error('Lock command failed:', error);
-      this.emit('error', { type: 'lockCommand', error });
+      console.log('Status refresh after the lock command failed. Live position events still apply.');
+    }
+    if (outcome === LockingProcessState.SUCCESS) {
+      return LockingProcessState.SUCCESS;
+    }
+    if (outcome === LockingProcessState.FAILED) {
+      console.error(`❌ ${label} confirmed failure outcome ${outcome}`);
       return LockingProcessState.FAILED;
     }
+    throw new ShieldCommandError(`Unexpected process outcome ${outcome}.`, 'transport_failure');
   }
 
   /**
@@ -890,29 +1058,8 @@ class SmartLockService {
    */
   public async enterCalibrationMode(): Promise<boolean> {
     try {
-      console.log('📝 Step 1: Entering calibration mode...');
-      
-      // Subscribe to calibration state (0xDD04) to receive status updates
-      const calSubId = await subscribeToNotifications(
-        FULL_UUIDS.CALIBRATION_SERVICE,
-        FULL_UUIDS.CALIBRATION_PROCESS_STATE,
-        (data) => {
-          const state = data.length > 0 ? data[0] as CalibrationProcessState : CalibrationProcessState.UNKNOWN;
-          console.log('🔔 Calibration state changed:', state);
-          this.emit('calibrationStateChanged', { state });
-        }
-      );
-      this.subscriptionIds.push(calSubId);
-
-      // Write 1 to 0xDD01 to enter calibration mode (this kicks off the process)
-      console.log('✍️ Writing 1 to 0xDD01 to enter calibration mode...');
-      await writeCharacteristic(
-        FULL_UUIDS.CALIBRATION_SERVICE,
-        FULL_UUIDS.CALIBRATION_CONTROL,
-        new Uint8Array([1]) // Enter Calibration = 1
-      );
-
-      console.log('✅ Calibration mode entered, subscribed to state updates');
+      console.log('📝 Starting Shield calibration');
+      await shieldSession.calibrationStart();
       return true;
     } catch (error) {
       console.error('❌ Failed to enter calibration mode:', error);
@@ -927,23 +1074,11 @@ class SmartLockService {
    * Values: CLP = 2, CULP = 3, JLP = 4, JULP = 5
    */
   public async calibrateLockPosition(position: 2 | 3 | 4 | 5): Promise<boolean> {
-    try {
-      const positionNames = { 2: 'CLP (Locked)', 3: 'CULP (Unlocked)', 4: 'JLP (Jammed Locked)', 5: 'JULP (Jammed Unlocked)' };
-      console.log(`📝 Calibrating lock position: ${positionNames[position]}`);
-      
-      await writeCharacteristic(
-        FULL_UUIDS.CALIBRATION_SERVICE,
-        FULL_UUIDS.LOCKING_MECHANISM_CALIBRATION,
-        new Uint8Array([position])
-      );
-      
-      console.log(`✅ Lock position ${positionNames[position]} calibrated`);
-      return true;
-    } catch (error) {
-      console.error('❌ Lock position calibration failed:', error);
-      this.emit('error', { type: 'calibration', error });
-      return false;
-    }
+    const positionNames = { 2: 'CLP (Locked)', 3: 'CULP (Unlocked)', 4: 'JLP (Jammed Locked)', 5: 'JULP (Jammed Unlocked)' };
+    console.log(`📝 Calibrating lock position: ${positionNames[position]}`);
+    await shieldSession.calibrationStep(position);
+    console.log(`✅ Lock position ${positionNames[position]} accepted`);
+    return true;
   }
 
   /**
@@ -979,6 +1114,9 @@ class SmartLockService {
    * Returns a promise that resolves when calibration completes or fails
    */
   public async readCalibrationState(): Promise<CalibrationProcessState> {
+    if (shieldSession.isLive()) {
+      return CalibrationProcessState.UNKNOWN;
+    }
     try {
       console.log('📖 Reading calibration state from 0xDD04...');
       const stateData = await readCharacteristic(
@@ -1002,6 +1140,11 @@ class SmartLockService {
    * Returns a promise that resolves when calibration completes or fails
    */
   public async waitForCalibrationResult(timeoutMs: number = 60000): Promise<CalibrationProcessState> {
+    if (shieldSession.isLive()) {
+      const state = await shieldSession.calibrationFinish();
+      console.log('📊 Calibration finish state:', state);
+      return state as CalibrationProcessState;
+    }
     return new Promise(async (resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
