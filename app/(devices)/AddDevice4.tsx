@@ -1,22 +1,16 @@
-import SetupScreen from '@/components/SetupScreen';
-import { setupStyles } from '@/components/SetupScreen';
+import SetupScreen, { setupStyles } from '@/components/SetupScreen';
 import { AppButton } from '@/design-system/Buttons/Buttons';
 import { Ionicons } from '@expo/vector-icons';
-import { RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, TouchableOpacity, View } from 'react-native';
-import { GestureHandlerRootView, PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
-import ProfilePage from '../(profile actions)/Profile';
+import { ActivityIndicator, Alert, Modal, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { getMediaUrl } from '../../constants/api';
 import { colors } from '../../design-system/colors/colors';
-import { BackArrow } from '../../design-system/icons';
 import { Beylock, Beyplug, Beysense, Beyswitch, BluetoothIcon } from '../../design-system/icons/filled/';
 import { Spacing } from '../../design-system/Layout/spacing';
-import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
 import { Typography } from '../../design-system/typography/typography';
 // Metro config handles BLE mocking when DISABLE_BLE=true
 import bluetoothManager, { smartLockService } from '../../src/ble';

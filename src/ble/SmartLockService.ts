@@ -7,38 +7,38 @@
 
 import { FULL_UUIDS } from './bleConfig';
 import {
-  connectToDevice,
-  disconnectFromDevice,
-  getDiscoveredDevices,
-  isConnected,
-  readCharacteristic,
-  scanForDevices,
-  setDisconnectionCallback,
-  stopScan,
-  subscribeToNotifications,
-  writeAndWaitForStateUpdate,
-  writeCharacteristic
+    connectToDevice,
+    disconnectFromDevice,
+    getDiscoveredDevices,
+    isConnected,
+    readCharacteristic,
+    scanForDevices,
+    setDisconnectionCallback,
+    stopScan,
+    subscribeToNotifications,
+    writeAndWaitForStateUpdate,
+    writeCharacteristic
 } from './bluetoothmanager';
 import { ShieldCommandError, ShieldIdentityError } from './shield/errors';
 import {
-  beginReconnect,
-  nextReconnectStep,
-  noteProbe,
-  noteScan,
-  ProbeOutcome,
+    beginReconnect,
+    nextReconnectStep,
+    noteProbe,
+    noteScan,
+    ProbeOutcome,
 } from './shield/reconnect';
 import { shieldSession, ShieldStatus } from './shield/session';
-import { resolveExpectedLock, saveDeviceBinding, rememberPendingLock, loadDeviceBinding } from './shield/store';
+import { loadDeviceBinding, rememberPendingLock, resolveExpectedLock, saveDeviceBinding } from './shield/store';
 import { SHIELD_OP } from './shield/uuids';
 import {
-  BleDevice,
-  CalibrationProcessState,
-  DoorState,
-  LockCommand,
-  LockingProcessState,
-  LockPosition,
-  SmartLockState,
-  WifiConnectionState
+    BleDevice,
+    CalibrationProcessState,
+    DoorState,
+    LockCommand,
+    LockingProcessState,
+    LockPosition,
+    SmartLockState,
+    WifiConnectionState
 } from './types';
 
 /**

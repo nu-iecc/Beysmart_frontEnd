@@ -1,9 +1,9 @@
 import {
-  beginReconnect,
-  nextReconnectStep,
-  noteProbe,
-  noteScan,
-  ReconnectProgress,
+    beginReconnect,
+    nextReconnectStep,
+    noteProbe,
+    noteScan,
+    ReconnectProgress,
 } from './reconnect';
 
 let failed = 0;

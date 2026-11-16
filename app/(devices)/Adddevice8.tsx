@@ -1,21 +1,16 @@
-import SetupScreen from '@/components/SetupScreen';
-import { setupStyles } from '@/components/SetupScreen';
+import SetupScreen, { setupStyles } from '@/components/SetupScreen';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { TouchableOpacity, View } from 'react-native';
-import ProfilePage from '../(profile actions)/Profile';
+import { View } from 'react-native';
 import { getMediaUrl } from '../../constants/api';
 import { AppButton } from '../../design-system/Buttons/Buttons';
 import { colors } from '../../design-system/colors/colors';
 import { DEVICE_DETAILS_SETUP } from '../../design-system/home/Constants';
-import { BackArrow } from '../../design-system/icons';
 import Dropdown, { DropdownOption } from '../../design-system/inputs/Dropdown';
 import TextField from '../../design-system/inputs/TextField';
 import { Spacing } from '../../design-system/Layout/spacing';
-import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
-import { Typography } from '../../design-system/typography/typography';
 import { loadPendingLock, saveDeviceBinding } from '../../src/ble/shield/store';
 import apiClient from '../../utils/api';
 

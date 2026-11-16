@@ -2,46 +2,46 @@ import { Buffer } from 'buffer';
 import { Platform } from 'react-native';
 import { Subscription } from 'react-native-ble-plx';
 import {
-  getConnectedDevice,
-  readCharacteristic,
-  writeCharacteristic,
+    getConnectedDevice,
+    readCharacteristic,
+    writeCharacteristic,
 } from '../bluetoothmanager';
 import {
-  SENTINEL_REF,
-  bytesToHex,
-  concat,
-  equalBytes,
-  hexToBytes,
-  nonzero,
-  readU16,
-  readU32,
+    bytesToHex,
+    concat,
+    equalBytes,
+    hexToBytes,
+    nonzero,
+    readU16,
+    readU32,
+    SENTINEL_REF,
 } from './bytes';
 import { buildAppProof, buildAuthStart, buildClaimProof, buildClaimStart, sealCommand } from './codec';
 import {
-  claimBindingProof,
-  claimSessionKey,
-  decryptOwnerKey,
-  gcmDecrypt,
-  gcmNonce,
-  originalClaimProof,
-  verifyLockProof,
+    claimBindingProof,
+    claimSessionKey,
+    decryptOwnerKey,
+    gcmDecrypt,
+    gcmNonce,
+    originalClaimProof,
+    verifyLockProof,
 } from './crypto';
 import { ShieldCommandError, ShieldIdentityError } from './errors';
 import { isTerminalProcessMatch, matchProcessEvent } from './processEvent';
+import { randomBytes } from './random';
 import { sameLock } from './reconnect';
 import { loadOwner, saveOwner, StoredOwner } from './store';
-import { randomBytes } from './random';
 import { readTestKSetup } from './testConfig';
 import {
-  SHIELD_AUTH_RX_UUID,
-  SHIELD_AUTH_TX_UUID,
-  SHIELD_BOOTSTRAP_RX_UUID,
-  SHIELD_BOOTSTRAP_TX_UUID,
-  SHIELD_OP,
-  SHIELD_PROTOCOL_INFO_UUID,
-  SHIELD_SECURE_RX_UUID,
-  SHIELD_SECURE_TX_UUID,
-  SHIELD_SERVICE_UUID,
+    SHIELD_AUTH_RX_UUID,
+    SHIELD_AUTH_TX_UUID,
+    SHIELD_BOOTSTRAP_RX_UUID,
+    SHIELD_BOOTSTRAP_TX_UUID,
+    SHIELD_OP,
+    SHIELD_PROTOCOL_INFO_UUID,
+    SHIELD_SECURE_RX_UUID,
+    SHIELD_SECURE_TX_UUID,
+    SHIELD_SERVICE_UUID,
 } from './uuids';
 
 export interface ShieldStatus {

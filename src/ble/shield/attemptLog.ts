@@ -1,5 +1,5 @@
-import { PROCESS_FAILED, PROCESS_SUCCESS } from './processEvent';
 import { ShieldCommandErrorKind } from './errors';
+import { PROCESS_FAILED, PROCESS_SUCCESS } from './processEvent';
 
 export type AttemptAction = 'lock' | 'unlock';
 

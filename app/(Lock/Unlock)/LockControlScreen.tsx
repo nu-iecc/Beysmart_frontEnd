@@ -1,26 +1,15 @@
+import ConnectionMotion from '@/components/ConnectionMotion';
 import LockLoader from '@/components/LockLoader';
 import LockMotion from '@/components/LockMotion';
-import ConnectionMotion from '@/components/ConnectionMotion';
-import { Ionicons } from '@expo/vector-icons';
-import PageHeader from '@/components/PageHeader';
-import { ScrollView, StyleSheet } from 'react-native';
 import { getMediaUrl } from '@/constants/api';
 import { colors } from '@/design-system/colors/colors';
-import { BackArrow } from '@/design-system/icons';
+import { Ionicons } from '@expo/vector-icons';
+import { ScrollView, StyleSheet } from 'react-native';
 // Import icons that work from barrel
 import {
-    BluetoothIcon,
-    Door,
-    Invite,
-    SettingsIcon,
+    BluetoothIcon
 } from '@/design-system/icons/filled';
 // Import icons directly that don't work from barrel
-import ActivityLog from '@/design-system/icons/filled/ActivityLog';
-import Battery from '@/design-system/icons/filled/Battery';
-import Locked from '@/design-system/icons/filled/Locked';
-import OpenedDoor from '@/design-system/icons/filled/OpenedDoor';
-import Unlocked from '@/design-system/icons/filled/Unlocked';
-import Wifi from '@/design-system/icons/filled/Wifi';
 import { Spacing } from '@/design-system/Layout/spacing';
 import {
     LockAnimationConstants,
@@ -48,11 +37,9 @@ import {
     PermissionsAndroid,
     Platform,
     TouchableOpacity,
-    TouchableWithoutFeedback,
-    View,
+    View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle } from 'react-native-svg';
+import { Circle } from 'react-native-svg';
 
 // Animated Circle component for the progress ring
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
