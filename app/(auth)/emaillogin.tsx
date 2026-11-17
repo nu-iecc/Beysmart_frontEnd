@@ -1,7 +1,8 @@
 import AuthScreen from '@/components/AuthScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import BiometricSetupModal from '@/components/BiometricSetupModal';
@@ -13,70 +14,125 @@ import FilledBackIcon from '@/design-system/icons/filled/BackIcon';
 import FilledHomeIcon from '@/design-system/icons/filled/HomeIcon';
 import TextField from '@/design-system/inputs/TextField';
 import { authAPI, biometricsService, LoginRequest } from '@/services';
+import apiClient from '@/utils/api';
 
 export default function EmailLoginScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
+  const mounted = useRef(false);
+  const focusVersion = useRef(0);
+  const biometricFocusVersion = useRef(0);
+  const busyRef = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  useEffect(() => navigation.addListener?.('beforeRemove', event => {
+    if (busyRef.current) event.preventDefault();
+  }), [navigation]);
+
+  const isCurrent = (version: number) =>
+    mounted.current && navigation.isFocused() && focusVersion.current === version;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
+  const [useInvitationCode, setUseInvitationCode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showBiometricModal, setShowBiometricModal] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState(false);
 
-  const canContinue = email.trim() && password.trim();
+  useFocusEffect(useCallback(() => {
+    if (focusVersion.current !== biometricFocusVersion.current) {
+      setShowBiometricModal(false);
+      setPendingNavigation(false);
+    }
+    return () => { focusVersion.current += 1; };
+  }, []));
+
+  const canContinue = !!email.trim() && (useInvitationCode ? /^\d{4}$/.test(invitationCode.trim()) : !!password.trim());
 
   const handleLogin = async () => {
-    if (!canContinue) return;
+    if (!canContinue || busyRef.current) return;
 
+    const version = focusVersion.current;
+    busyRef.current = true;
     setIsLoading(true);
     setError('');
 
     try {
+      if (useInvitationCode) {
+        const identifier = email.trim().toLowerCase();
+        const { data, status } = await apiClient.post('auth/verify-otp/', {
+          email: identifier,
+          otp: invitationCode.trim(),
+        }, {
+          validateStatus: status => (status >= 200 && status < 300) || status === 401 || status === 403,
+        });
+        if (!isCurrent(version)) return;
+        if (status === 401 || status === 403 || data?.success === false) {
+          setError('Invitation verification failed. Please check your email and code and try again.');
+          return;
+        }
+        if (data?.next !== 'create_password') {
+          setError('This code cannot be used to create an invited account. Please check your invitation.');
+          return;
+        }
+        if (data.csrf_token) await AsyncStorage.setItem('csrftoken', data.csrf_token);
+        if (!isCurrent(version)) return;
+        setInvitationCode('');
+        busyRef.current = false;
+        router.replace({ pathname: '/(auth)/Complete-Registeration', params: { email: identifier, flow: 'guest-invite' } });
+        return;
+      }
+
       const loginData: LoginRequest = {
         email: email.trim(),
         password: password,
       };
 
       const response = await authAPI.login(loginData);
+      if (!isCurrent(version)) return;
 
-      // Check if login was successful (check both success flag and message)
-      const isLoginSuccessful = response.success || response.message === 'Login successful' || (response.user && !response.error);
+      // An explicit failure overrides legacy success messages or user objects.
+      const isLoginSuccessful = response.success !== false && Boolean(
+        response.success || response.message === 'Login successful' || (response.user && !response.error)
+      );
 
-      if (isLoginSuccessful) {
-        // Store user data in AsyncStorage
-        await AsyncStorage.setItem('isAuthenticated', 'true');
+      if (isLoginSuccessful && response.user) {
+        // Store the identity before marking the session authenticated.
+        const userData = {
+          ...response.user,
+          email: response.user.email || email.trim(),
+        };
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
         await AsyncStorage.setItem('loginMethod', 'email');
-        if (response.user) {
-          // Ensure email is included in user data
-          const userData = {
-            ...response.user,
-            email: response.user.email || email.trim(),
-          };
-          await AsyncStorage.setItem('userData', JSON.stringify(userData));
-        } else {
-          // Fallback: store minimal user data with email
-          await AsyncStorage.setItem('userData', JSON.stringify({ email: email.trim() }));
+        if (response.csrf_token) await AsyncStorage.setItem('csrftoken', response.csrf_token);
+        await AsyncStorage.setItem('isAuthenticated', 'true');
+
+        try {
+          await biometricsService.resetBiometricAttempts();
+          const isFirstLogin = await biometricsService.isFirstLogin();
+          const canSetupBiometrics = await biometricsService.canSetupBiometrics();
+
+          if (!isCurrent(version)) return;
+          if (isFirstLogin && canSetupBiometrics) {
+            biometricFocusVersion.current = version;
+            setPendingNavigation(true);
+            setShowBiometricModal(true);
+            return;
+          }
+        } catch {
+          // Biometric setup is optional once the session has been stored.
         }
-
-        // Reset biometric attempts counter on successful login
-        await biometricsService.resetBiometricAttempts();
-
-        // Check if this is the first login and if device supports biometrics
-        const isFirstLogin = await biometricsService.isFirstLogin();
-        const canSetupBiometrics = await biometricsService.canSetupBiometrics();
-
-        if (isFirstLogin && canSetupBiometrics) {
-          // Show biometric setup modal instead of navigating immediately
-          setPendingNavigation(true);
-          setShowBiometricModal(true);
-        } else {
-          // Navigate to home/main app screen
-          router.replace('/(app)/home');
-        }
+        if (!isCurrent(version)) return;
+        busyRef.current = false;
+        router.replace('/(app)/home');
       } else {
         // Login failed - handle specific error cases
-        console.log('Login failed:', response);
         if (response.email_verification_required) {
           setError(ERROR_MESSAGES.EMAIL_NOT_VERIFIED);
         } else {
@@ -84,7 +140,10 @@ export default function EmailLoginScreen() {
         }
       }
     } catch (err: any) {
-      if (err.response?.status === 401) {
+      if (!isCurrent(version)) return;
+      if (useInvitationCode && err.response) {
+        setError('Invitation verification failed. Please check your email and code and try again.');
+      } else if (err.response?.status === 401) {
         setError(ERROR_MESSAGES.INVALID_CREDENTIALS);
       } else if (err.code === 'NETWORK_ERROR' || err.message?.includes('Network Error')) {
         setError(ERROR_MESSAGES.NETWORK_ERROR);
@@ -92,26 +151,31 @@ export default function EmailLoginScreen() {
         setError(ERROR_MESSAGES.UNEXPECTED_ERROR);
       }
     } finally {
-      setIsLoading(false);
+      busyRef.current = false;
+      if (mounted.current) setIsLoading(false);
     }
   };
 
   // Biometric setup handlers
   const handleBiometricEnable = () => {
+    const version = biometricFocusVersion.current;
+    if (!isCurrent(version)) return;
     setShowBiometricModal(false);
     Alert.alert(
       'Biometrics Enabled',
       'You can now use biometric authentication to login.',
-      [{ text: 'OK', onPress: () => router.replace('/(app)/home') }]
+      [{ text: 'OK', onPress: () => { if (isCurrent(version)) router.replace('/(app)/home'); } }]
     );
   };
 
   const handleBiometricSkip = () => {
+    if (!isCurrent(biometricFocusVersion.current)) return;
     setShowBiometricModal(false);
     router.replace('/(app)/home');
   };
 
   const handleBiometricClose = () => {
+    if (!isCurrent(biometricFocusVersion.current)) return;
     setShowBiometricModal(false);
     if (pendingNavigation) {
       router.replace('/(app)/home');
@@ -125,7 +189,8 @@ export default function EmailLoginScreen() {
         <AppButton
           variant="iconOnlyMedium"
           icon={<FilledBackIcon />}
-          onPress={() => router.back()}
+          disabled={isLoading}
+          onPress={() => { if (!busyRef.current) router.back(); }}
         />
       </View>
 
@@ -139,10 +204,10 @@ export default function EmailLoginScreen() {
       {/* Title & subtitle */}
       <View style={styles.centerContent}>
         <Typography variant="h1" color={colors.text} style={styles.title}>
-          {LOGIN_STRINGS.emailLogin.title}
+          {useInvitationCode ? 'Accept an invitation' : LOGIN_STRINGS.emailLogin.title}
         </Typography>
         <Typography variant="body" color={colors.secondaryText} style={styles.subtitle}>
-          {LOGIN_STRINGS.emailLogin.subtitle}
+          {useInvitationCode ? 'Enter the email and code from your invitation.' : LOGIN_STRINGS.emailLogin.subtitle}
         </Typography>
       </View>
 
@@ -155,21 +220,31 @@ export default function EmailLoginScreen() {
           value={email}
           onChangeText={setEmail}
           placeholder={LOGIN_STRINGS.emailLogin.fields.emailPlaceholder}
+          keyboardType="email-address"
         />
       </View>
 
-      {/* Password field */}
+      {/* Password and invitation codes are separate login options. */}
       <View style={Margin.betweenSections}>
         <Typography variant="body" style={{ marginBottom: Spacing.xs }}>
-          {LOGIN_STRINGS.emailLogin.fields.passwordLabel}
+          {useInvitationCode ? 'Invitation code' : LOGIN_STRINGS.emailLogin.fields.passwordLabel}
         </Typography>
-        <TextField
+        {useInvitationCode ? <TextField
+          key="invitation"
+          value={invitationCode}
+          onChangeText={setInvitationCode}
+          placeholder="4-digit invitation code"
+          keyboardType="number-pad"
+          maxLength={4}
+          secureTextEntry
+        /> : <TextField
+          key="password"
           value={password}
           onChangeText={setPassword}
           placeholder={LOGIN_STRINGS.emailLogin.fields.passwordPlaceholder}
           secureTextEntry
           showEyeIcon
-        />
+        />}
       </View>
 
       {/* Error message */}
@@ -185,20 +260,31 @@ export default function EmailLoginScreen() {
       <View style={{ marginTop: Grid.rowGap }}>
         <AppButton
           variant="primaryLarge"
-          title={isLoading ? "Logging in..." : LOGIN_STRINGS.emailLogin.actions.login}
+          title={isLoading ? (useInvitationCode ? 'Verifying...' : 'Logging in...') : (useInvitationCode ? 'Verify invitation' : LOGIN_STRINGS.emailLogin.actions.login)}
           onPress={handleLogin}
           disabled={!canContinue || isLoading}
         />
       </View>
 
-      {/* Forgot password */}
-      <TouchableOpacity onPress={() => router.push('./resetpassword')}>
+      <TouchableOpacity accessibilityRole="button" disabled={isLoading} onPress={() => {
+        setUseInvitationCode(!useInvitationCode);
+        setInvitationCode('');
+        setError('');
+      }}>
+        <View style={styles.forgotPassword}>
+          <Typography variant="caption" color={colors.secondaryText}>
+            {useInvitationCode ? 'Log in with a password instead' : 'Have an invitation code?'}
+          </Typography>
+        </View>
+      </TouchableOpacity>
+
+      {!useInvitationCode && <TouchableOpacity onPress={() => router.push('./resetpassword')}>
         <View style={styles.forgotPassword}>
           <Typography variant="caption" color={colors.secondaryText}>
             {LOGIN_STRINGS.emailLogin.actions.forgotPassword}
           </Typography>
         </View>
-      </TouchableOpacity>
+      </TouchableOpacity>}
     </View><BiometricSetupModal
         visible={showBiometricModal}
         onClose={handleBiometricClose}

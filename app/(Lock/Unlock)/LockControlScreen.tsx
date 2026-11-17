@@ -1,7 +1,7 @@
 import ConnectionMotion from '@/components/ConnectionMotion';
 import LockLoader from '@/components/LockLoader';
 import LockMotion from '@/components/LockMotion';
-import { getMediaUrl } from '@/constants/api';
+import { BASE_URL, getMediaUrl } from '@/constants/api';
 import { colors } from '@/design-system/colors/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet } from 'react-native';
@@ -19,13 +19,16 @@ import {
 } from '@/design-system/Lock/Constants';
 import { BottomNavigation } from '@/design-system/Navigation/BottomNavigation';
 import { Typography } from '@/design-system/typography/typography';
+import { deviceRole } from '@/services/locks';
 import { LockPosition, smartLockService } from '@/src/ble';
 import { getConnectedDevice, isBluetoothEnabled } from '@/src/ble/bluetoothmanager';
 import { AttemptEvent, commandErrorKind, reduceAttempt } from '@/src/ble/shield/attemptLog';
 import { ShieldIdentityError } from '@/src/ble/shield/errors';
+import { loadDeviceBinding } from '@/src/ble/shield/store';
 import apiClient from '@/utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
+import axios, { isAxiosError } from 'axios';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -47,8 +50,49 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 // Reconnect has no cancellation/completion API; later instances must wait for earlier ones.
 let screenConnectionWork: Promise<void> = Promise.resolve();
 
+// Storage operations already submitted to native code cannot be cancelled. Keep
+// subsequent verification and offline reads behind them, even across instances.
+const verifiedRoleWork = new Map<string, Promise<void>>();
+
+function withVerifiedRoleKey<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const result = (verifiedRoleWork.get(key) ?? Promise.resolve()).then(work);
+  const tail = result.then(() => {}, () => {});
+  verifiedRoleWork.set(key, tail);
+  void tail.then(() => {
+    if (verifiedRoleWork.get(key) === tail) verifiedRoleWork.delete(key);
+  });
+  return result;
+}
+
+function verifiedRoleKey(userId: string, deviceId: string): string {
+  return `verified-lock-role-v1:${encodeURIComponent(BASE_URL)}:${encodeURIComponent(userId)}:${encodeURIComponent(deviceId)}`;
+}
+
+async function currentUserId(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem('userData');
+    const id = raw ? JSON.parse(raw)?.id : null;
+    return (typeof id === 'string' && id.trim()) || (typeof id === 'number' && Number.isSafeInteger(id))
+      ? String(id) : null;
+  } catch {
+    return null;
+  }
+}
+
+function isNetworkFailure(error: unknown): boolean {
+  return isAxiosError(error) && !error.response &&
+    (error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT');
+}
+
+class NoRegisteredLockBindingError extends Error {
+  constructor() {
+    super('No registered lock binding exists for this device on this phone.');
+  }
+}
+
 function registeredLockMessage(error: unknown): string {
   if (error instanceof Error && error.message === 'Reconnect already in progress.') return '';
+  if (error instanceof NoRegisteredLockBindingError) return error.message;
   if (error instanceof ShieldIdentityError && (error.kind === 'credentials' || error.kind === 'auth_failed')) {
     return 'This phone could not authenticate to the registered lock.';
   }
@@ -74,7 +118,11 @@ const LockControlScreen: React.FC = () => {
   const homeName = params.homeName as string;
   const deviceId = params.deviceId as string;
   const bleDeviceId = params.bleDeviceId as string; // Cached locator, not the lock identity
-  const role = params.role === 'owner' || params.role === 'guest' ? params.role : undefined;
+  const [role, setRole] = useState<'owner' | 'guest' | null>(null);
+  const roleRef = useRef<'owner' | 'guest' | null>(null);
+  const [roleError, setRoleError] = useState('');
+  const [roleRetry, setRoleRetry] = useState(0);
+  const [offlineOwner, setOfflineOwner] = useState(false);
 
   // State
   const [isLocked, setIsLocked] = useState<boolean | null>(null); // null = not loaded yet
@@ -177,6 +225,7 @@ const LockControlScreen: React.FC = () => {
 
   // Request Bluetooth permissions on Android
   useEffect(() => {
+    if (!isFocused || role !== 'owner' || roleRef.current !== 'owner') return;
     const requestBluetoothPermissions = async () => {
       if (Platform.OS === 'android') {
         try {
@@ -232,33 +281,136 @@ const LockControlScreen: React.FC = () => {
     };
 
     requestBluetoothPermissions();
-  }, []);
+  }, [isFocused, role]);
 
-  // The address is only a hint; the service verifies the saved Lock ID and credential.
+  // Live detail is authoritative. Offline access requires a previously verified
+  // owner for this account and device, plus a device-specific local binding.
   useEffect(() => {
+    if (!isFocused) return;
     let active = true;
+    const generation = focusGenerationRef.current;
+    const isCurrent = () => active && focusedRef.current && focusGenerationRef.current === generation;
+    roleRef.current = null;
+    setRole(null);
+    setRoleError('');
+    setOfflineOwner(false);
     setIsBleIdLoaded(false);
     deviceBleIdRef.current = bleDeviceId || null;
-    const fetchLocator = async () => {
-      try {
-        if (!bleDeviceId && deviceId) {
-          const response = await apiClient.get(`home/devices/${deviceId}/`);
-          if (active) deviceBleIdRef.current = response.data?.ble_device_id || null;
+    const fetchDetail = async () => {
+      const userId = await currentUserId();
+      if (!isCurrent()) return;
+      const cacheKey = userId && typeof deviceId === 'string' && deviceId ? verifiedRoleKey(userId, deviceId) : null;
+      const updateCache = async (owner: boolean) => {
+        if (!cacheKey || !userId) return;
+        try {
+          await withVerifiedRoleKey(cacheKey, async () => {
+            if (!isCurrent() || await currentUserId() !== userId || !isCurrent()) return;
+            if (owner) await AsyncStorage.setItem(cacheKey, 'owner');
+            else await AsyncStorage.removeItem(cacheKey);
+          });
+        } catch (error) {
+          console.warn('Could not update verified lock access cache.', error);
         }
+      };
+      try {
+        if (typeof deviceId !== 'string' || !deviceId) throw new Error('Missing device ID');
+        // Revoke a 401 before the shared response interceptor clears userData.
+        // Let that interceptor retain its normal session-expiry behavior.
+        const adapter = axios.getAdapter(apiClient.defaults.adapter);
+        const response = await apiClient.get(`home/devices/${encodeURIComponent(deviceId)}/`, {
+          validateStatus: status => (status >= 200 && status < 300) || status === 403,
+          adapter: async config => {
+            try {
+              return await adapter(config);
+            } catch (error) {
+              if (isAxiosError(error) && error.response?.status === 401) await updateCache(false);
+              throw error;
+            }
+          },
+        });
+        const serverRole = response.status === 403 || !response.data || typeof response.data !== 'object'
+          ? undefined : deviceRole(response.data);
+        await updateCache(serverRole === 'owner');
+        if (!isCurrent()) return;
+        const sameUser = userId !== null && await currentUserId() === userId;
+        if (!isCurrent()) return;
+        if (response.status === 403) throw new Error('Access denied');
+        if (!serverRole) throw new Error('Missing access role');
+        if (userId && !sameUser) throw new Error('Account changed while checking access');
+        roleRef.current = serverRole;
+        setRole(serverRole);
+        if (!bleDeviceId) deviceBleIdRef.current = response.data?.ble_device_id || null;
       } catch (error) {
-        console.warn('Could not read the saved Bluetooth locator; the lock can still be scanned.', error);
+        const status = isAxiosError(error) ? error.response?.status : undefined;
+        if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+          await updateCache(false);
+        }
+        if (isCurrent()) {
+          console.warn('Could not verify lock access.', error);
+          if (isNetworkFailure(error) && cacheKey && userId) {
+            try {
+              const verifiedOffline = await withVerifiedRoleKey(cacheKey, async () => {
+                if (!isCurrent()) return false;
+                const [cachedRole, binding] = await Promise.all([
+                  AsyncStorage.getItem(cacheKey),
+                  loadDeviceBinding(deviceId),
+                ]);
+                if (!isCurrent() || await currentUserId() !== userId || !isCurrent()) return false;
+                return cachedRole === 'owner' &&
+                  typeof binding?.lockIdHex === 'string' && !!binding.lockIdHex.trim() &&
+                  typeof binding.peripheralId === 'string' && !!binding.peripheralId.trim();
+              });
+              if (isCurrent() && verifiedOffline) {
+                roleRef.current = 'owner';
+                setRole('owner');
+                setOfflineOwner(true);
+                return;
+              }
+            } catch (cacheError) {
+              console.warn('Could not read verified offline access.', cacheError);
+            }
+          }
+          if (isCurrent()) setRoleError(isNetworkFailure(error)
+            ? 'Offline access is unavailable: a previously verified owner and registered lock binding are required. Connect to the internet and try again.'
+            : 'Unable to verify your access to this lock. Please try again.');
+        }
       } finally {
-        if (active) setIsBleIdLoaded(true);
+        if (isCurrent()) {
+          if (roleRef.current !== 'owner') {
+            verifiedConnectionRef.current = false;
+            setIsConnected(false);
+            setIsLocked(null);
+            isLockedRef.current = null;
+            setIsLoadingState(true);
+            const ownedDevice = ownedDeviceRef.current;
+            ownedDeviceRef.current = null;
+            if (ownedDevice) {
+              const cleanup = screenConnectionWork.then(async () => {
+                if (getConnectedDevice() === ownedDevice) await smartLockService.disconnect();
+              });
+              screenConnectionWork = cleanup.catch(error => console.warn('Disconnect failed:', error));
+            }
+          }
+          setIsBleIdLoaded(true);
+        }
       }
     };
-    void fetchLocator();
-    return () => { active = false; };
-  }, [deviceId, bleDeviceId]);
+    void fetchDetail();
+    return () => { active = false; roleRef.current = null; };
+  }, [isFocused, deviceId, bleDeviceId, roleRetry]);
 
   const openRegisteredLock = useCallback(async (isCurrent: () => boolean) => {
     // A connection left by another screen is not proof that it is this lock.
     if (smartLockService.isConnected()) await smartLockService.disconnect();
     if (!isCurrent()) return false;
+    // A cached locator or the service's single-credential fallback is not a
+    // device-specific identity binding.
+    const binding = typeof deviceId === 'string' && deviceId.trim()
+      ? await loadDeviceBinding(deviceId) : null;
+    if (!isCurrent()) return false;
+    if (typeof binding?.lockIdHex !== 'string' || !binding.lockIdHex.trim()) {
+      throw new NoRegisteredLockBindingError();
+    }
     // Capture the device at the service's authenticated event, not a later owner
     // that happens to connect to the same peripheral before the promise resumes.
     let authenticatedDevice: ReturnType<typeof getConnectedDevice> = null;
@@ -270,6 +422,7 @@ const LockControlScreen: React.FC = () => {
       result = await smartLockService.reconnectRegisteredLock({
         backendDeviceId: deviceId,
         cachedPeripheralId: deviceBleIdRef.current,
+        strictBackendBinding: true,
       });
     } finally {
       unsubscribe();
@@ -280,6 +433,12 @@ const LockControlScreen: React.FC = () => {
         await smartLockService.disconnect();
       }
       return false;
+    }
+    if (typeof result.lockIdHex !== 'string' || result.lockIdHex.trim().toLowerCase() !== binding.lockIdHex.trim().toLowerCase()) {
+      if (connectedDevice && connectedDevice.id === result.peripheralId && getConnectedDevice() === connectedDevice) {
+        await smartLockService.disconnect();
+      }
+      throw new Error('Authenticated lock does not match the device binding.');
     }
     if (!connectedDevice || connectedDevice.id !== result.peripheralId || getConnectedDevice() !== connectedDevice) {
       throw new Error('Connection lost during authentication.');
@@ -295,10 +454,10 @@ const LockControlScreen: React.FC = () => {
   }, [deviceId]);
 
   const connectRegisteredLock = useCallback(async (showError = true): Promise<boolean> => {
-    if (connectingRef.current || disconnectingRef.current || !isMountedGlobal.current || !focusedRef.current) return false;
+    if (roleRef.current !== 'owner' || connectingRef.current || disconnectingRef.current || !isMountedGlobal.current || !focusedRef.current) return false;
     const generation = focusGenerationRef.current;
     const isCurrent = () => isMountedGlobal.current && focusedRef.current &&
-      focusGenerationRef.current === generation && !intentionalDisconnectRef.current;
+      focusGenerationRef.current === generation && roleRef.current === 'owner' && !intentionalDisconnectRef.current;
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     retryTimerRef.current = null;
     connectingRef.current = true;
@@ -394,14 +553,14 @@ const LockControlScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!isFocused || !isBleIdLoaded) return;
+    if (!isFocused || !isBleIdLoaded || role !== 'owner') return;
     const generation = focusGenerationRef.current;
     let active = true;
     const restoreConnection = async () => {
       // A previous focus generation may still be authenticating or cleaning up.
       await screenConnectionWork;
       if (!active || !isMountedGlobal.current || !focusedRef.current ||
-          focusGenerationRef.current !== generation || intentionalDisconnectRef.current) return;
+          focusGenerationRef.current !== generation || roleRef.current !== 'owner' || intentionalDisconnectRef.current) return;
       if (verifiedConnectionRef.current && ownedDeviceRef.current &&
           getConnectedDevice() === ownedDeviceRef.current && smartLockService.isConnected()) {
         const state = smartLockService.getState();
@@ -418,11 +577,11 @@ const LockControlScreen: React.FC = () => {
     };
     void restoreConnection();
     return () => { active = false; };
-  }, [isFocused, isBleIdLoaded, connectRegisteredLock]);
+  }, [isFocused, isBleIdLoaded, role, connectRegisteredLock]);
 
   // Only an authenticated connection can enable the controls. Retry unexpected losses.
   useEffect(() => {
-    if (!isFocused) return;
+    if (!isFocused || role !== 'owner') return;
     let active = true;
     const retry = (attempt: number) => {
       if (!active || !focusedRef.current || intentionalDisconnectRef.current || attempt > 5) return;
@@ -450,7 +609,7 @@ const LockControlScreen: React.FC = () => {
       unsubDisconnected();
       unsubError();
     };
-  }, [isFocused, connectRegisteredLock]);
+  }, [isFocused, role, connectRegisteredLock]);
 
   const applyAttempt = useCallback((event: AttemptEvent) => {
     const reduced = reduceAttempt({ pending: pendingActionRef.current }, event);
@@ -473,7 +632,7 @@ const LockControlScreen: React.FC = () => {
     if (!isFocused) return;
     let isMounted = true;
     const canApplyState = () => isMounted && isMountedGlobal.current && focusedRef.current &&
-      !intentionalDisconnectRef.current &&
+      roleRef.current === 'owner' && !intentionalDisconnectRef.current &&
       (connectingGenerationRef.current === focusGenerationRef.current ||
         (connectingGenerationRef.current === null && verifiedConnectionRef.current &&
           ownedDeviceRef.current !== null && getConnectedDevice() === ownedDeviceRef.current));
@@ -614,7 +773,7 @@ const LockControlScreen: React.FC = () => {
     try {
       // Use ref to get the CURRENT lock state (not stale closure value)
       const currentlyLocked = isLockedRef.current;
-      if (currentlyLocked === null || !verifiedConnectionRef.current) {
+      if (roleRef.current !== 'owner' || currentlyLocked === null || !verifiedConnectionRef.current) {
         setIsTransitioning(false);
         return;
       }
@@ -642,7 +801,7 @@ const LockControlScreen: React.FC = () => {
 
   // Handle press in (start holding)
   const handlePressIn = useCallback(() => {
-    if (commandInFlightRef.current || isTransitioning || !isConnected || isLoadingState || isLocked === null) return;
+    if (roleRef.current !== 'owner' || commandInFlightRef.current || isTransitioning || !isConnected || isLoadingState || isLocked === null) return;
     setIsHolding(true);
     Animated.timing(progressAnim, {
       toValue: 1,
@@ -711,7 +870,7 @@ const LockControlScreen: React.FC = () => {
   const handleTurnOnBluetooth = async () => {
     const generation = focusGenerationRef.current;
     const isCurrent = () => isMountedGlobal.current && focusedRef.current &&
-      focusGenerationRef.current === generation && !intentionalDisconnectRef.current;
+      focusGenerationRef.current === generation && roleRef.current === 'owner' && !intentionalDisconnectRef.current;
     if (!isCurrent()) return;
     setShowBluetoothModal(false);
     console.log('🔵 Opening Bluetooth settings...');
@@ -772,7 +931,8 @@ const LockControlScreen: React.FC = () => {
   };
 
   const handleInviteFamily = () => {
-    // TODO: Navigate to invite screen
+    if (roleRef.current !== 'owner' || !deviceId) return;
+    router.push({ pathname: '/(app)/lock-invite', params: { deviceId, lockName: deviceName || 'Lock' } } as never);
   };
 
   const handleSettings = () => {
@@ -849,9 +1009,9 @@ const LockControlScreen: React.FC = () => {
   const loading = !isBleIdLoaded;
   const unlocked = isConnected && isLocked === false;
   const lockKnown = isConnected && !isLoadingState && isLocked !== null;
-  const isOwner = role !== 'guest';
-  const statusTitle = isDisconnecting ? 'Disconnecting…' : isConnecting ? 'Connecting…' : !isConnected ? 'Disconnected' : isTransitioning ? operationAction === 'lock' ? 'Locking…' : 'Unlocking…' : !lockKnown ? 'Reading lock…' : isLocked ? 'Locked' : 'Unlocked';
-  const statusHint = !isConnected ? 'Tap the lock to connect via Bluetooth' : isTransitioning ? 'Keep your phone close while the lock moves' : !lockKnown ? 'Reading the lock state' : isLocked ? LockControlConstants.holdToUnlock : LockControlConstants.holdToLock;
+  const isOwner = role === 'owner' && roleRef.current === 'owner';
+  const statusTitle = !isBleIdLoaded ? 'Checking access…' : role === 'guest' ? 'Guest access' : !isOwner ? 'Access unavailable' : isDisconnecting ? 'Disconnecting…' : isConnecting ? 'Connecting…' : !isConnected ? 'Disconnected' : isTransitioning ? operationAction === 'lock' ? 'Locking…' : 'Unlocking…' : !lockKnown ? 'Reading lock…' : isLocked ? 'Locked' : 'Unlocked';
+  const statusHint = role === 'guest' ? 'Guest Bluetooth access is not yet available.' : !isOwner ? 'Your access must be verified before Bluetooth controls are available.' : offlineOwner ? 'Offline owner access using previously verified access on this phone.' : !isConnected ? 'Tap the lock to connect via Bluetooth' : isTransitioning ? 'Keep your phone close while the lock moves' : !lockKnown ? 'Reading the lock state' : isLocked ? LockControlConstants.holdToUnlock : LockControlConstants.holdToLock;
   const pulseStyle = { transform: [{ scale: pulseAnim }] };
   const onHeroPress = () => { if (!isConnected) void handleReconnect(); };
   const disconnect = async () => {
@@ -944,7 +1104,7 @@ return ((<View style={styles.screen}>
             <View style={styles.heroStage}>
               <Animated.View pointerEvents="none" style={[styles.heroPulse, connected && styles.heroPulseConnected, pulseStyle]} />
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={connected ? (unlocked ? 'Lock' : 'Unlock') : 'Connect'}
-                disabled={busy || (connected && !lockKnown)} onPress={onHeroPress} onPressIn={handlePressIn} onPressOut={handlePressOut} activeOpacity={0.85}
+                disabled={!isOwner || busy || (connected && !lockKnown)} onPress={onHeroPress} onPressIn={handlePressIn} onPressOut={handlePressOut} activeOpacity={0.85}
                 style={[styles.heroRing, connected && styles.heroRingConnected]}>
                 <View style={[styles.heroButton, connected && styles.heroButtonConnected]}>
                   {isConnecting ? <ConnectionMotion /> : connected
@@ -958,13 +1118,13 @@ return ((<View style={styles.screen}>
               <Typography variant="h2" color={colors.surface} style={styles.statusTitle} numberOfLines={1}>{statusTitle}</Typography>
             </View>
             <Typography variant="caption" color="#C7D0DD" style={styles.statusHint}>{statusHint}</Typography>
-            <TouchableOpacity style={[styles.linkButton, connected ? styles.disconnectButton : styles.connectButton]} accessibilityRole="button"
+            {isOwner && <TouchableOpacity style={[styles.linkButton, connected ? styles.disconnectButton : styles.connectButton]} accessibilityRole="button"
               disabled={busy} onPress={connected ? disconnect : connect} activeOpacity={0.8}>
               <Ionicons name={connected ? 'close-circle-outline' : 'bluetooth'} size={18} color={connected ? colors.surface : colors.text} />
               <Typography variant="body" color={connected ? colors.surface : colors.text} style={styles.actionLabel}>
                 {connected ? 'Disconnect' : 'Connect'}
               </Typography>
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </View>
  <View style={styles.stats}>
             {[
@@ -1000,6 +1160,13 @@ return ((<View style={styles.screen}>
       {!!error && <View style={[styles.message, styles.errorMessage]}>
         <Ionicons name="alert-circle" size={18} color="#B42318" />
         <Typography variant="caption" color="#B42318" style={{ flex: 1 }}>{error}</Typography>
+      </View>}
+      {!!roleError && <View style={[styles.message, styles.errorMessage]}>
+        <Ionicons name="alert-circle" size={18} color="#B42318" />
+        <Typography variant="caption" color="#B42318" style={{ flex: 1 }}>{roleError}</Typography>
+        <TouchableOpacity accessibilityRole="button" onPress={() => setRoleRetry(value => value + 1)}>
+          <Typography variant="caption" color="#B42318" style={styles.menuTitle}>Retry</Typography>
+        </TouchableOpacity>
       </View>}
 
     </>}

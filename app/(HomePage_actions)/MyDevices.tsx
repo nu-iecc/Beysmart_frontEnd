@@ -1,9 +1,9 @@
-import LockCard, { lockRole } from '@/components/LockCard';
+import LockCard from '@/components/LockCard';
 import PageHeader from '@/components/PageHeader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, TextInput, TouchableOpacity, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, TextInput, TouchableOpacity, View } from 'react-native';
 import ProfilePage from '../(profile actions)/Profile';
 import { getMediaUrl } from '../../constants/api';
 import { colors } from '../../design-system/colors/colors';
@@ -13,20 +13,20 @@ import { Spacing } from '../../design-system/Layout/spacing';
 import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
 import { MyDevicesConstants } from '../../design-system/Profile actions/Constants';
 import { Typography } from '../../design-system/typography/typography';
-import apiClient from '../../utils/api';
+import { deviceRole, getAccessibleDevices, getAllPages } from '@/services/locks';
 import { scale, scaleFont } from '../../utils/responsive';
 
 // Types
 interface Device {
-  role?: string;
-  access_role?: string;
+  role?: string | null;
+  access_role?: string | null;
   is_owner?: boolean;
-  id: number;
+  id: number | string;
   name: string;
   device_type: string;
-  room?: number;
+  room?: number | string;
   room_name?: string;
-  home?: number;
+  home?: number | string;
   home_name?: string;
   tb_device_id?: string;
   status?: string;
@@ -47,10 +47,15 @@ const MyDevices: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [user, setUser] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [deviceError, setDeviceError] = useState(false);
+  const [homesError, setHomesError] = useState(false);
+  const [roomsError, setRoomsError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
-  const [homes, setHomes] = useState<{[key: number]: string}>({});
-  const [rooms, setRooms] = useState<{[key: number]: string}>({});
+  const [homes, setHomes] = useState<Record<string, string>>({});
+  const [rooms, setRooms] = useState<Record<string, string>>({});
   const [showProfile, setShowProfile] = useState(false);
   const [userEmail, setUserEmail] = useState('');
 
@@ -74,41 +79,44 @@ const MyDevices: React.FC = () => {
     loadUserData();
   }, []);
 
-  // Load devices, homes, and rooms from API
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Fetch devices, homes, and rooms in parallel
-        const [devicesRes, homesRes, roomsRes] = await Promise.all([
-          apiClient.get('home/devices/'),
-          apiClient.get('home/homes/'),
-          apiClient.get('home/rooms/')
-        ]);
-
-        setDevices(devicesRes.data);
-
-        // Create lookup maps for homes and rooms
-        const homesMap: {[key: number]: string} = {};
-        homesRes.data.forEach((home: any) => {
-          homesMap[home.id] = home.name;
-        });
-        setHomes(homesMap);
-
-        const roomsMap: {[key: number]: string} = {};
-        roomsRes.data.forEach((room: any) => {
-          roomsMap[room.id] = room.name;
-        });
-        setRooms(roomsMap);
-      } catch (error: any) {
-        console.error('Error loading data:', error);
-        Alert.alert('Error', MyDevicesConstants.errorLoadingDevices);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    setRefreshKey(value => value + 1);
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    setRefreshKey(value => value + 1);
+  }, []));
+
+  // Metadata is optional; the device list must load even when a guest cannot read it.
+  useEffect(() => {
+    let active = true;
+    const devicesRequest = getAccessibleDevices<Device>().then(data => {
+      if (active) { setDevices(data); setDeviceError(false); }
+    }).catch(error => {
+      console.error('Error loading devices:', error);
+      if (active) setDeviceError(true);
+    }).finally(() => {
+      if (active) setIsLoading(false);
+    });
+    const loadNames = (endpoint: string, setNames: (names: Record<string, string>) => void, setError: (error: boolean) => void) => {
+      return getAllPages<{ id: number | string; name: string }>(endpoint, true).then(data => {
+        if (active) {
+          setNames(Object.fromEntries(data.map(item => [String(item.id), item.name])));
+          setError(false);
+        }
+      }).catch(error => {
+        console.warn(`Error loading ${endpoint}:`, error);
+        if (active) setError(true);
+      });
+    };
+    const homesRequest = loadNames('home/homes/', setHomes, setHomesError);
+    const roomsRequest = loadNames('home/rooms/', setRooms, setRoomsError);
+    void Promise.allSettled([devicesRequest, homesRequest, roomsRequest]).then(() => {
+      if (active) setRefreshing(false);
+    });
+    return () => { active = false; };
+  }, [refreshKey]);
 
   // Filter and search logic (consistent order: search first, then filter)
   const getFilteredDevices = () => {
@@ -118,8 +126,8 @@ const MyDevices: React.FC = () => {
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(device => {
-        const homeName = device.home ? homes[device.home] : '';
-        const roomName = device.room ? rooms[device.room] : '';
+        const homeName = device.home_name || (device.home != null ? homes[device.home] : '') || '';
+        const roomName = device.room_name || (device.room != null ? rooms[device.room] : '') || '';
         return (
           device.name.toLowerCase().includes(query) ||
           homeName.toLowerCase().includes(query) ||
@@ -147,12 +155,12 @@ const MyDevices: React.FC = () => {
 
   // Handle control button press for smart locks
   const handleControl = (device: Device) => {
-    const homeName = device.home ? homes[device.home] : 'Home';
+    const homeName = device.home_name || (device.home != null ? homes[device.home] : '') || 'Home';
     router.push({
       pathname: '/(Lock/Unlock)/LockControlScreen',
       params: {
         deviceId: device.id.toString(),
-        role: lockRole(device),
+        role: deviceRole(device),
         deviceName: device.name,
         homeName: homeName,
       },
@@ -177,7 +185,7 @@ const MyDevices: React.FC = () => {
 
   // Render device card - IMPROVED LAYOUT with text ellipsis
   const renderDeviceCard = (device: Device) => {
-    return (<View key={device.id} style={{ marginBottom: 12 }}><LockCard name={device.name} location={device.room_name || (device.room ? rooms[device.room] : '') || device.home_name || (device.home ? homes[device.home] : '') || 'Room'} role={lockRole(device)} connectionLabel={getStatusBadge(device).text} onPress={() => handleControl(device)} /></View>);
+    return (<View key={device.id} style={{ marginBottom: 12 }}><LockCard name={device.name} location={device.room_name || (device.room != null ? rooms[device.room] : '') || device.home_name || (device.home != null ? homes[device.home] : '') || 'Room'} role={deviceRole(device)} connectionLabel={getStatusBadge(device).text} onPress={() => handleControl(device)} /></View>);
   };
 
   // Render filter button
@@ -213,6 +221,10 @@ const MyDevices: React.FC = () => {
       {/* Main Content */}
       <View style={styles.content}>
         <View style={styles.contentContainer}>
+          {(deviceError || homesError || roomsError) && <View style={{ paddingVertical: Spacing.sm }}>
+            <Typography variant="body" color={colors.error}>{deviceError ? MyDevicesConstants.errorLoadingDevices : 'Some home or room information could not be loaded.'}</Typography>
+            <TouchableOpacity accessibilityRole="button" onPress={handleRefresh}><Typography variant="body" color={colors.secondaryText}>Try again</Typography></TouchableOpacity>
+          </View>}
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary.base} />
@@ -220,8 +232,10 @@ const MyDevices: React.FC = () => {
                 {MyDevicesConstants.loadingMessage}
               </Typography>
             </View>
+          ) : devices.length === 0 && deviceError ? (
+            <ScrollView contentContainerStyle={{ flexGrow: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />} />
           ) : devices.length === 0 ? (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
               <View style={styles.emptyContainer}>
                 <Typography variant="h3" color={colors.text} style={styles.emptyTitle}>
                   No devices yet
@@ -285,6 +299,7 @@ const MyDevices: React.FC = () => {
               <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
               >
                 {/* Section Title with count */}
                 <View style={styles.sectionHeader}>
@@ -298,7 +313,7 @@ const MyDevices: React.FC = () => {
                   </View>
                 </View>
 
-                {filteredDevices.length === 0 ? (
+                {filteredDevices.length === 0 && !deviceError ? (
                   <View style={styles.noResultsContainer}>
                     <Typography variant="body" color={colors.secondaryText} style={styles.noResultsText}>
                       No devices found

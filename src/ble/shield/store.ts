@@ -4,6 +4,7 @@ import { bytesToHex } from './bytes';
 const STORAGE_KEY = 'shield-test-owner-v1';
 const BINDING_KEY = 'shield-device-lock-v1';
 const PENDING_KEY = 'shield-pending-lock-v1';
+let bindingWrites: Promise<void> = Promise.resolve();
 
 export interface StoredOwner {
   lockIdHex: string;
@@ -62,16 +63,56 @@ async function readBindings(): Promise<Record<string, DeviceLockBinding>> {
 
 export async function loadDeviceBinding(backendDeviceId: string): Promise<DeviceLockBinding | null> {
   const bindings = await readBindings();
-  return bindings[backendDeviceId] ?? null;
+  return Object.prototype.hasOwnProperty.call(bindings, backendDeviceId)
+    ? bindings[backendDeviceId] ?? null : null;
+}
+
+/** Strict reconnects require a device-specific, 16-byte ProtocolInfo identity. */
+export async function loadStrictDeviceBinding(backendDeviceId: string): Promise<DeviceLockBinding | null> {
+  if (typeof backendDeviceId !== 'string' || !backendDeviceId.trim()) return null;
+  const binding = await loadDeviceBinding(backendDeviceId);
+  if (!binding || typeof binding.lockIdHex !== 'string') return null;
+  const lockIdHex = normalize(binding.lockIdHex);
+  if (!/^[0-9a-f]{32}$/.test(lockIdHex)) return null;
+  return {
+    lockIdHex,
+    peripheralId: typeof binding.peripheralId === 'string' ? binding.peripheralId : '',
+  };
+}
+
+function serializeBindingWrite<T>(work: () => Promise<T>): Promise<T> {
+  const result = bindingWrites.then(work);
+  bindingWrites = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 export async function saveDeviceBinding(backendDeviceId: string, binding: DeviceLockBinding): Promise<void> {
-  const bindings = await readBindings();
-  bindings[backendDeviceId] = {
-    lockIdHex: normalize(binding.lockIdHex),
-    peripheralId: binding.peripheralId,
-  };
-  await AsyncStorage.setItem(BINDING_KEY, JSON.stringify(bindings));
+  await serializeBindingWrite(async () => {
+    const bindings = await readBindings();
+    bindings[backendDeviceId] = {
+      lockIdHex: normalize(binding.lockIdHex),
+      peripheralId: binding.peripheralId,
+    };
+    await AsyncStorage.setItem(BINDING_KEY, JSON.stringify(bindings));
+  });
+}
+
+/** Update only the locator, and never recreate or replace a changed binding. */
+export async function updateBoundPeripheral(
+  backendDeviceId: string,
+  expectedLockIdHex: string,
+  peripheralId: string
+): Promise<boolean> {
+  return serializeBindingWrite(async () => {
+    const bindings = await readBindings();
+    const binding = Object.prototype.hasOwnProperty.call(bindings, backendDeviceId)
+      ? bindings[backendDeviceId] : null;
+    if (!binding || typeof binding.lockIdHex !== 'string' ||
+        normalize(binding.lockIdHex) !== expectedLockIdHex) return false;
+    bindings[backendDeviceId] = { ...binding, peripheralId };
+    await AsyncStorage.setItem(BINDING_KEY, JSON.stringify(bindings));
+    return true;
+  });
 }
 
 export async function listDeviceBindings(): Promise<DeviceLockBinding[]> {

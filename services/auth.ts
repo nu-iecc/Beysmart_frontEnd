@@ -54,7 +54,12 @@ export const authAPI = {
   // Email login
   login: async (credentials: LoginRequest): Promise<AuthResponse> => {
     try {
-      const response = await apiClient.post(API_ENDPOINTS.LOGIN, credentials);
+      const response = await apiClient.post(API_ENDPOINTS.LOGIN, credentials, {
+        validateStatus: status => (status >= 200 && status < 300) || status === 401 || status === 403,
+      });
+      if (response.status === 401 || response.status === 403) {
+        return { ...response.data, success: false };
+      }
       const authResponse = response.data;
       
       // Django session is automatically created and managed
@@ -66,8 +71,8 @@ export const authAPI = {
       return authResponse;
     } catch (error: any) {
       // Handle axios error and return consistent format
-      if (error.response?.data) {
-        return error.response.data;
+      if (error.response) {
+        return { ...error.response.data, success: false };
       }
       throw error;
     }

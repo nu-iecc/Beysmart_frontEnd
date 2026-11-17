@@ -1,8 +1,9 @@
-import AuthScreen from '@/components/AuthScreen';
 import { AUTH_COUNTRIES } from '../../design-system/auth/constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import axios from "axios";
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from 'react-native';
 import { BASE_URL } from '../../constants/api';
 import { AUTH_COPY, AUTH_TEXT, AUTH_THEME, AUTH_VISUALS, type AuthScreenCopy } from '../../design-system/auth/constants';
@@ -13,16 +14,59 @@ import { Margin } from '../../design-system/Layout/margins';
 import { Padding } from '../../design-system/Layout/padding';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { Typography } from '../../design-system/typography/typography';
+import BiometricSetupModal from '../../components/BiometricSetupModal';
+import { biometricsService } from '../../services';
+import apiClient from '../../utils/api';
 import { validatePasswordMatch, validatePasswordStrength } from '../../utils/passwordValidation';
 
 
 const CompleteRegisteration = () => {
+  const navigation = useNavigation();
+  const mounted = useRef(false);
+  const focusVersion = useRef(0);
+  const biometricFocusVersion = useRef(0);
+  const busyRef = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  useEffect(() => navigation.addListener?.('beforeRemove', event => {
+    if (busyRef.current) event.preventDefault();
+  }), [navigation]);
+
+  const isCurrent = (version: number) =>
+    mounted.current && navigation.isFocused() && focusVersion.current === version;
+
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [confirmPasswordError, setConfirmPasswordError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { email, phone_number, first_name, last_name } = useLocalSearchParams();
+  const { email, phone_number, first_name, last_name, flow } = useLocalSearchParams<{
+    email?: string; phone_number?: string; first_name?: string; last_name?: string; flow?: string;
+  }>();
+  const isGuest = flow === 'guest-invite';
+  const [guestEmail, setGuestEmail] = useState(email || '');
+  const [guestFirstName, setGuestFirstName] = useState(first_name || '');
+  const [guestLastName, setGuestLastName] = useState(last_name || '');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [phoneCountry, setPhoneCountry] = useState(AUTH_COUNTRIES[0]);
+  const [countryPickerVisible, setCountryPickerVisible] = useState(false);
+  const [showBiometricModal, setShowBiometricModal] = useState(false);
+  const [biometricPhone, setBiometricPhone] = useState('');
+
+  useFocusEffect(useCallback(() => {
+    if (focusVersion.current !== biometricFocusVersion.current) {
+      setShowBiometricModal(false);
+    }
+    return () => { focusVersion.current += 1; };
+  }, []));
+
+  const guestPhoneDigits = guestPhone.replace(/\D/g, '');
+  const nationalPhoneDigits = phoneCountry.code === 'IT' ? guestPhoneDigits : guestPhoneDigits.replace(/^0+/, '');
+  const fullGuestPhone = phone_number || `${phoneCountry.dial}${nationalPhoneDigits}`;
 
   const handlePasswordChange = (text: string) => {
     setPassword(text);
@@ -50,20 +94,79 @@ const CompleteRegisteration = () => {
   };
 
   const handleCompleteRegisteration = async () => {
+    if (busyRef.current || isDisabled) return;
+    const version = focusVersion.current;
+    busyRef.current = true;
     setIsLoading(true);
     try {
       const requestData = {
-        first_name: first_name,
-        last_name: last_name,
-        email: email, // This should come from previous screen
-        phone_number: phone_number, // This should come from previous screen
+        first_name: isGuest ? guestFirstName.trim() : first_name,
+        last_name: isGuest ? guestLastName.trim() : last_name,
+        email: isGuest ? guestEmail.trim().toLowerCase() : email,
+        phone_number: isGuest ? fullGuestPhone : phone_number,
         password,
         confirm_password: confirmPassword,
 
         user_type: 'CUSTOMER', // Default to customer
       };
 
-      const response = await axios.post(`${BASE_URL}auth/complete-registration/`, requestData);
+      if (isGuest) {
+        const { data, status } = await apiClient.post('auth/guest-invite/complete/', requestData, {
+          validateStatus: status => (status >= 200 && status < 300) || status === 401 || status === 403,
+        });
+        if (!isCurrent(version)) return;
+        if (status === 401 || status === 403) {
+          Alert.alert('Registration Failed', 'Unable to complete your invitation. Please check your details and try again. If your account was created, please log in.');
+          return;
+        }
+        if (data?.success === false) {
+          Alert.alert('Registration Failed', 'Unable to complete your invitation. If your account was created, please log in.');
+          return;
+        }
+        const id = data?.user?.id;
+        const hasValidId = (typeof id === 'string' && id.trim().length > 0) ||
+          (typeof id === 'number' && Number.isSafeInteger(id));
+        if (!data?.user || typeof data.user !== 'object' || Array.isArray(data.user) || !hasValidId) {
+          Alert.alert('Unable to complete sign in', 'Your account may have been created, but the server did not return a valid user ID. Please log in to continue.');
+          return;
+        }
+        const user = {
+          ...data.user,
+          email: data.user.email || requestData.email,
+          phone_number: data.user.phone_number || fullGuestPhone,
+        };
+        await AsyncStorage.multiSet([
+          ['userData', JSON.stringify(user)],
+          ['loginMethod', 'email'],
+          ...(data.csrf_token ? [['csrftoken', data.csrf_token] as [string, string]] : []),
+        ]);
+        await AsyncStorage.setItem('isAuthenticated', 'true');
+        if (!isCurrent(version)) return;
+        setBiometricPhone(user.phone_number);
+
+        // Biometric checks are optional after account creation; a failure must not
+        // turn a completed registration into a second submission.
+        try {
+          await biometricsService.resetBiometricAttempts();
+          // The existing biometric service cannot resolve a numeric zero user ID.
+          if (user.id !== 0 && await biometricsService.isFirstLogin() && await biometricsService.canSetupBiometrics()) {
+            if (!isCurrent(version)) return;
+            biometricFocusVersion.current = version;
+            setShowBiometricModal(true);
+            return;
+          }
+        } catch {
+          // The authenticated user can set up biometrics later in settings.
+        }
+        if (!isCurrent(version)) return;
+        busyRef.current = false;
+        router.replace('/(app)/home');
+        return;
+      }
+
+      await axios.post(`${BASE_URL}auth/complete-registration/`, requestData);
+      if (!isCurrent(version)) return;
+      busyRef.current = false;
       router.push({
         pathname: '/(auth)/ProfilePhoto' as never,
         params: { email: email, phone_number: phone_number }
@@ -71,17 +174,20 @@ const CompleteRegisteration = () => {
 
 
     } catch (error: any) {
-      console.error('Registration completion failed:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      const errorMessage = error.response?.data?.message || error.message || 'Registration completion failed. Please try again.';
+      if (!isCurrent(version)) return;
+      const errorMessage = isGuest
+        ? 'Unable to complete your invitation. Please check your details and try again. If your account was created, please log in.'
+        : error.response?.data?.message || error.message || 'Registration completion failed. Please try again.';
       Alert.alert('Registration Failed', errorMessage);
     } finally {
-      setIsLoading(false);
+      busyRef.current = false;
+      if (mounted.current) setIsLoading(false);
     }
   };
 
-  const isDisabled = !password || !confirmPassword || passwordError !== '' || confirmPasswordError !== '' || isLoading;
+  const isDisabled = !password || !confirmPassword || passwordError !== '' || confirmPasswordError !== '' || isLoading ||
+    (isGuest && (!guestFirstName.trim() || !guestLastName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim()) ||
+      (!phone_number && (nationalPhoneDigits.length < 6 || fullGuestPhone.replace(/\D/g, '').length > 15))));
 
   const copy = AUTH_COPY.completeRegistration as AuthScreenCopy;
   const visuals = AUTH_VISUALS.completeRegistration;
@@ -92,6 +198,10 @@ const CompleteRegisteration = () => {
       <View style={{ paddingTop: Spacing.lg, ...Padding.screenHorizontal }}>
         {/* Back Button */}
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          accessibilityState={{ disabled: isLoading }}
+          disabled={isLoading}
           style={{
             width: 44,
             height: 44,
@@ -101,7 +211,7 @@ const CompleteRegisteration = () => {
             justifyContent: 'center',
             marginBottom: Spacing.lg,
           }}
-          onPress={() => router.back()}
+          onPress={() => { if (!busyRef.current) router.back(); }}
         >
           <visuals.backIcon width={24} height={24} color={AUTH_THEME.text} />
         </TouchableOpacity>
@@ -123,11 +233,11 @@ const CompleteRegisteration = () => {
           </View>
 
           <Typography variant="h1" style={{ marginBottom: Spacing.xs, textAlign: 'center' }}>
-            {copy.title}
+            {isGuest ? 'Set your password' : copy.title}
           </Typography>
 
           <Typography variant="body" color={AUTH_THEME.secondaryText} style={{ textAlign: 'center' }}>
-            {copy.subtitle}
+            {isGuest ? 'Your code is verified. Complete your details to access your shared locks.' : copy.subtitle}
           </Typography>
         </View>
       </View>
@@ -135,19 +245,47 @@ const CompleteRegisteration = () => {
       {/* Form (scrollable) */}
       <ScrollView
         style={{ flex: 1 }}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           ...Padding.screenHorizontal,
           paddingBottom: Spacing.xl,
         }}
       >
         {/* Form Fields */}
+        {isGuest && <View style={{ ...Margin.betweenComponents }}>
+          <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+            <View style={{ flex: 1 }}><TextField label="First name" value={guestFirstName} onChangeText={setGuestFirstName} /></View>
+            <View style={{ flex: 1 }}><TextField label="Last name" value={guestLastName} onChangeText={setGuestLastName} /></View>
+          </View>
+          {!email && <TextField label="Email" value={guestEmail} onChangeText={setGuestEmail} keyboardType="email-address" />}
+          {!phone_number && <>
+            <TextField
+              label="Phone number"
+              value={guestPhone}
+              onChangeText={setGuestPhone}
+              placeholder="Enter your phone number"
+              keyboardType="phone-pad"
+              leftIcon={<TouchableOpacity accessibilityRole="button" accessibilityLabel="Choose country code" onPress={() => setCountryPickerVisible(!countryPickerVisible)}>
+                <Typography variant="body">{phoneCountry.dial} ▾</Typography>
+              </TouchableOpacity>}
+            />
+            {countryPickerVisible && <View style={{ backgroundColor: AUTH_THEME.surface, padding: Spacing.sm, borderRadius: 12 }}>
+              {AUTH_COUNTRIES.map(country => <TouchableOpacity key={country.code} accessibilityRole="button" style={{ paddingVertical: Spacing.xs }} onPress={() => {
+                setPhoneCountry(country);
+                setCountryPickerVisible(false);
+              }}>
+                <Typography variant="body">{country.name} ({country.dial})</Typography>
+              </TouchableOpacity>)}
+            </View>}
+          </>}
+        </View>}
 
         <View style={{ ...Margin.betweenComponents }}>
           <TextField
             label="Password"
             value={password}
             onChangeText={handlePasswordChange}
-error={passwordError}
+            error={passwordError}
             placeholder="Create a strong password"
             secureTextEntry={true}
             showEyeIcon
@@ -159,7 +297,7 @@ error={passwordError}
             label="Confirm Password"
             value={confirmPassword}
             onChangeText={handleConfirmPasswordChange}
-error={confirmPasswordError}
+            error={confirmPasswordError}
             placeholder="Confirm your password"
             secureTextEntry={true}
             showEyeIcon
@@ -190,7 +328,7 @@ error={confirmPasswordError}
       <View style={{ ...Padding.screenHorizontal, paddingBottom: Spacing.lg }}>
         <AppButton
           variant={isDisabled ? 'primaryDisabled' : 'primaryLarge'}
-          title={isLoading ? 'Creating Account...' : copy.buttons.primaryTitle}
+          title={isLoading ? 'Creating Account...' : isGuest ? 'Save password and continue' : copy.buttons.primaryTitle}
           icon={isLoading ? (
             <ActivityIndicator
               size="small"
@@ -242,6 +380,20 @@ error={confirmPasswordError}
           </Typography>
         </View>
       </View>
+      <BiometricSetupModal
+        visible={showBiometricModal}
+        phoneNumber={biometricPhone}
+        onClose={() => { if (isCurrent(biometricFocusVersion.current)) { setShowBiometricModal(false); router.replace('/(app)/home'); } }}
+        onSkip={() => { if (isCurrent(biometricFocusVersion.current)) { setShowBiometricModal(false); router.replace('/(app)/home'); } }}
+        onEnable={() => {
+          const version = biometricFocusVersion.current;
+          if (!isCurrent(version)) return;
+          setShowBiometricModal(false);
+          Alert.alert('Biometrics Enabled', 'You can now use biometric authentication to login.', [
+            { text: 'OK', onPress: () => { if (isCurrent(version)) router.replace('/(app)/home'); } },
+          ]);
+        }}
+      />
     </View>
   )));
 };

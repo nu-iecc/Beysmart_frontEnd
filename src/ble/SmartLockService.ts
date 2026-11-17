@@ -28,7 +28,7 @@ import {
     ProbeOutcome,
 } from './shield/reconnect';
 import { shieldSession, ShieldStatus } from './shield/session';
-import { loadDeviceBinding, rememberPendingLock, resolveExpectedLock, saveDeviceBinding } from './shield/store';
+import { loadDeviceBinding, loadStrictDeviceBinding, rememberPendingLock, resolveExpectedLock, saveDeviceBinding, updateBoundPeripheral } from './shield/store';
 import { SHIELD_OP } from './shield/uuids';
 import {
     BleDevice,
@@ -173,28 +173,52 @@ class SmartLockService {
   /**
    * Find the already registered lock. The cached Bluetooth address is only a hint.
    * The permanent identity is the Lock ID from ProtocolInfo.
+   * Set strictBackendBinding to require a valid binding for this backend device.
    */
   public async reconnectRegisteredLock(input: {
     backendDeviceId?: string;
     cachedPeripheralId?: string | null;
+    strictBackendBinding?: boolean;
   }): Promise<{ peripheralId: string; lockIdHex: string; locatorChanged: boolean }> {
     if (this.reconnecting) {
       throw new Error('Reconnect already in progress.');
     }
-    const expectedLockIdHex = await resolveExpectedLock(input.backendDeviceId);
-    if (!expectedLockIdHex) {
-      throw new ShieldIdentityError('No saved credential for this lock.', 'credentials');
-    }
-    const binding = input.backendDeviceId ? await loadDeviceBinding(input.backendDeviceId) : null;
-    const cachedPeripheralId = binding?.peripheralId ?? input.cachedPeripheralId ?? null;
     this.reconnecting = true;
-    let progress = beginReconnect(cachedPeripheralId, expectedLockIdHex);
     try {
+      const backendDeviceId = input.backendDeviceId;
+      const binding = input.strictBackendBinding
+        ? await loadStrictDeviceBinding(backendDeviceId ?? '')
+        : null;
+      const expectedLockIdHex = input.strictBackendBinding
+        ? binding?.lockIdHex
+        : await resolveExpectedLock(backendDeviceId);
+      if (!expectedLockIdHex) {
+        throw new ShieldIdentityError(
+          input.strictBackendBinding ? 'No valid device binding for this lock.' : 'No saved credential for this lock.',
+          'credentials'
+        );
+      }
+      const locatorBinding = input.strictBackendBinding
+        ? binding
+        : backendDeviceId ? await loadDeviceBinding(backendDeviceId) : null;
+      const cachedPeripheralId = input.strictBackendBinding
+        ? locatorBinding?.peripheralId || input.cachedPeripheralId || null
+        : locatorBinding?.peripheralId ?? input.cachedPeripheralId ?? null;
+      let progress = beginReconnect(cachedPeripheralId, expectedLockIdHex);
       while (true) {
         const step = nextReconnectStep(progress);
         if (step.action === 'restored') {
-          if (input.backendDeviceId) {
-            await saveDeviceBinding(input.backendDeviceId, {
+          if (input.strictBackendBinding && backendDeviceId) {
+            try {
+              if (!await updateBoundPeripheral(backendDeviceId, expectedLockIdHex, step.peripheralId)) {
+                throw new ShieldIdentityError('The device binding changed during reconnect.', 'identity_mismatch');
+              }
+            } catch (error) {
+              await this.abandonCandidate();
+              throw error;
+            }
+          } else if (backendDeviceId) {
+            await saveDeviceBinding(backendDeviceId, {
               lockIdHex: expectedLockIdHex,
               peripheralId: step.peripheralId,
             });

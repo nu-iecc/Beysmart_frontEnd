@@ -1,4 +1,4 @@
-import LockCard, { AddLockCard, lockRole } from '@/components/LockCard';
+import LockCard, { AddLockCard } from '@/components/LockCard';
 import ProfileSection from '@/components/ProfileSection';
 import ComingSoon from '@/components/ComingSoon';
 import LockLoader from '@/components/LockLoader';
@@ -30,6 +30,7 @@ import { Linking, ScrollView, TouchableOpacity, View } from 'react-native'
 import ProfilePage from '../(profile actions)/Profile'
 import { getMediaUrl } from '../../constants/api'
 import apiClient from '../../utils/api'
+import { deviceRole, getAccessibleDevices, getAllPages } from '@/services/locks'
 
 const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
     const size = HOME_SETUP.DIMENSIONS.STEP_ICON.SIZE
@@ -214,20 +215,48 @@ const HomeScreen: React.FC = () => {
   const [isLoadingHomes, setIsLoadingHomes] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [deviceError, setDeviceError] = useState(false)
+  const [homesError, setHomesError] = useState(false)
+  const [roomsError, setRoomsError] = useState(false)
+  const [isLoadingDevices, setIsLoadingDevices] = useState(true)
   const contentOpacity = React.useRef(new Animated.Value(1)).current
+  const appliedHomeParam = React.useRef<string | undefined>(undefined)
   const handleRefresh = useCallback(() => { setRefreshing(true); setRefreshKey(value => value + 1) }, [])
+  const handleHomeSelect = useCallback((id: number) => {
+    if (typeof params.selectedHomeId === 'string') appliedHomeParam.current = params.selectedHomeId
+    setActiveHomeId(id)
+  }, [params.selectedHomeId])
   useEffect(() => {
-    const selected = Number(params.selectedHomeId)
-    if (Number.isFinite(selected) && homes.some(home => home.id === selected)) setActiveHomeId(selected)
+    appliedHomeParam.current = undefined
+  }, [params.selectedHomeId])
+  useEffect(() => {
+    const selected = params.selectedHomeId
+    if (typeof selected !== 'string' || !selected) return
+    if (appliedHomeParam.current === selected) return
+    const home = homes.find(item => String(item.id) === selected)
+    if (home) {
+      appliedHomeParam.current = selected
+      setActiveHomeId(home.id)
+    }
   }, [params.selectedHomeId, homes])
   const [rooms, setRooms] = useState<any[]>([])
   const [isLoadingRooms, setIsLoadingRooms] = useState(true)
-  const [devices, setDevices] = useState<any[]>([])
+  const [allDevices, setAllDevices] = useState<any[]>([])
   const [showProfile, setShowProfile] = useState(false)
 
-  // Combined loading state - wait for all critical data
-  const isLoadingData = isLoading || isLoadingHomes || (isLoadingRooms && devices.length === 0 && !refreshing)
-  useEffect(() => { if (!isLoadingRooms) setRefreshing(false) }, [isLoadingRooms])
+  // Shared devices are independent of the selected home. If no home is
+  // available, keep all accessible devices visible rather than hiding owners.
+  const devices = useMemo(() => allDevices.filter(device =>
+    activeHomeId == null || deviceRole(device) === 'guest' ||
+    String(device.home) === String(activeHomeId)
+  ), [allDevices, activeHomeId])
+  const homeDevices = useMemo(() => allDevices.filter(device =>
+    activeHomeId != null && String(device.home) === String(activeHomeId) && deviceRole(device) !== 'guest'
+  ), [allDevices, activeHomeId])
+  const homeRooms = useMemo(() => rooms.filter(room =>
+    activeHomeId != null && String(room.home) === String(activeHomeId)
+  ), [rooms, activeHomeId])
+  const isLoadingData = isLoading || (isLoadingDevices && allDevices.length === 0 && !refreshing)
 
   // Compute active home from homes array
   const activeHome = useMemo(() => {
@@ -337,78 +366,51 @@ const HomeScreen: React.FC = () => {
     }, [loadUserData, user])
   )
 
-  // Load homes from API
+  useFocusEffect(useCallback(() => {
+    setRefreshKey(value => value + 1)
+  }, []))
+
+  // Each request settles independently: missing guest-home metadata cannot hide locks.
   useEffect(() => {
-    const loadHomes = async () => {
-      try {
-        const response = await apiClient.get('home/homes/')
-        const homesData = response.data.map((home: any) => ({
-          id: home.id,
-          name: home.name
-        }))
-        setHomes(homesData)
+    let active = true
+    setIsLoadingDevices(true)
+    setIsLoadingHomes(true)
+    setIsLoadingRooms(true)
+    const devicesRequest = getAccessibleDevices<any>().then(data => {
+      if (active) { setAllDevices(data); setDeviceError(false) }
+    }).catch(error => {
+      console.error('Error loading devices:', error)
+      if (active) setDeviceError(true)
+    }).finally(() => {
+      if (active) setIsLoadingDevices(false)
+    })
+    const homesRequest = getAllPages<any>('home/homes/', true).then(data => {
+      if (!active) return
+      const homesData = data.map(home => ({ id: home.id, name: home.name }))
+      setHomes(homesData)
+      setHomesError(false)
+      setActiveHomeId(current => homesData.some(home => String(home.id) === String(current)) ? current : homesData[0]?.id)
+    }).catch(error => {
+      console.error('Error loading homes:', error)
+      if (active) setHomesError(true)
+    }).finally(() => { if (active) setIsLoadingHomes(false) })
+    const roomsRequest = getAllPages<any>('home/rooms/', true).then(data => {
+      if (active) { setRooms(data); setRoomsError(false) }
+    }).catch(error => {
+      console.error('Error loading rooms:', error)
+      if (active) setRoomsError(true)
+    }).finally(() => { if (active) setIsLoadingRooms(false) })
+    void Promise.allSettled([devicesRequest, homesRequest, roomsRequest]).then(() => {
+      if (active) setRefreshing(false)
+    })
+    return () => { active = false }
+  }, [refreshKey])
 
-        // Set first home as active if available
-        if (homesData.length > 0) {
-          setActiveHomeId(homesData[0].id)
-          // Mark the "Add your home" step as completed since user has homes
-          setSteps(prevSteps => completeSetupStep(prevSteps, 'add_home'))
-        }
-      } catch (error: any) {
-        console.error('Error loading homes:', error);
-        // Keep empty array if API fails
-        setHomes([])
-      } finally {
-        setIsLoadingHomes(false)
-      }
-    }
-
-    loadHomes()
-  }, [])
-
-  // Load rooms from API based on active home
   useEffect(() => {
-    const loadRoomsAndDevices = async () => {
-      if (!activeHomeId) {
-        setRooms([])
-        setDevices([])
-        setIsLoadingRooms(false)
-        updateStepsForCurrentHome(undefined, [], [])
-        return
-      }
-
-      try {
-        setIsLoadingRooms(true)
-
-        // Load all rooms and filter by home ID
-        const roomsResponse = await apiClient.get('home/rooms/')
-        const filteredRooms = roomsResponse.data.filter((room: any) => {
-          return room.home === activeHomeId || room.home === String(activeHomeId) || String(room.home) === String(activeHomeId)
-        })
-        setRooms(filteredRooms)
-
-        // Load all devices and filter by home ID
-        const devicesResponse = await apiClient.get('home/devices/')
-        const filteredDevices = devicesResponse.data.filter((device: any) => {
-          return device.home === activeHomeId || device.home === String(activeHomeId) || String(device.home) === String(activeHomeId)
-        })
-        setDevices(filteredDevices)
-
-        // Update setup steps based on current home's state
-        updateStepsForCurrentHome(activeHomeId, filteredRooms, filteredDevices)
-
-      } catch (error: any) {
-        console.error('Error loading rooms/devices:', error);
-        setRooms([])
-        setDevices([])
-        updateStepsForCurrentHome(activeHomeId, [], [])
-      } finally {
-        setIsLoadingRooms(false)
-      }
+    if (!isLoadingHomes && !isLoadingRooms && !isLoadingDevices && !homesError && !roomsError && !deviceError) {
+      updateStepsForCurrentHome(activeHomeId, homeRooms, homeDevices)
     }
-
-    loadRoomsAndDevices()
-  }, [activeHomeId, updateStepsForCurrentHome, refreshKey])
+  }, [activeHomeId, homeRooms, homeDevices, isLoadingHomes, isLoadingRooms, isLoadingDevices, homesError, roomsError, deviceError, updateStepsForCurrentHome])
 
   // Handle step completion from navigation params
   useEffect(() => {
@@ -417,36 +419,7 @@ const HomeScreen: React.FC = () => {
       setSteps(prevSteps => completeSetupStep(prevSteps, stepId))
     }
 
-    // Handle add_room or add_device completion
-    if (params.add_room === 'true' || params.add_device === 'true') {
-      // Reload rooms and devices, then update steps for current home
-      const reloadData = async () => {
-        if (activeHomeId) {
-          try {
-            // Reload rooms
-            const roomsResponse = await apiClient.get('home/rooms/')
-            const filteredRooms = roomsResponse.data.filter((room: any) =>
-              room.home === activeHomeId || room.home === String(activeHomeId) || String(room.home) === String(activeHomeId)
-            )
-            setRooms(filteredRooms)
-
-            // Reload devices
-            const devicesResponse = await apiClient.get('home/devices/')
-            const filteredDevices = devicesResponse.data.filter((device: any) =>
-              device.home === activeHomeId || device.home === String(activeHomeId) || String(device.home) === String(activeHomeId)
-            )
-            setDevices(filteredDevices)
-
-            // Update steps with both rooms and devices
-            updateStepsForCurrentHome(activeHomeId, filteredRooms, filteredDevices)
-          } catch (error) {
-            console.error('Error reloading data:', error)
-          }
-        }
-      }
-      reloadData()
-    }
-  }, [params.completedStep, params.add_room, params.add_device, activeHomeId, updateStepsForCurrentHome])
+  }, [params.completedStep])
   const bottomNavItems: BottomNavigationItem[] = [
     { key: 'home', label: 'Home', icon: null },
     { key: 'devices', label: 'Devices', icon: null },
@@ -492,12 +465,13 @@ const HomeScreen: React.FC = () => {
     if (step.key === 'start_using') {
       // Navigate to lock control screen to start using the device
       // If devices are available, use the first one's info, otherwise use defaults
-      if (devices.length > 0) {
-        const firstDevice = devices[0]
+      if (homeDevices.length > 0) {
+        const firstDevice = homeDevices[0]
         router.push({
           pathname: '/(Lock/Unlock)/LockControlScreen',
           params: {
             deviceId: firstDevice.id?.toString() || '',
+            role: deviceRole(firstDevice),
             deviceName: firstDevice.name || 'Smart Lock',
             homeName: firstDevice.home_name || firstDevice.room_name || activeHome?.name || 'Home',
           },
@@ -511,7 +485,7 @@ const HomeScreen: React.FC = () => {
     // For other steps, complete them normally
     const updated = completeSetupStep(steps, step.id)
     setSteps(updated)
-  }, [steps, activeHomeId, devices, activeHome])
+  }, [steps, activeHomeId, homeDevices, activeHome])
 
   const handleTabPress = useCallback((key: string) => {
     Animated.timing(contentOpacity, { toValue: 0, duration: 90, useNativeDriver: true }).start(() => {
@@ -526,12 +500,12 @@ const HomeScreen: React.FC = () => {
       pathname: '/(Lock/Unlock)/LockControlScreen',
       params: {
         deviceId: device.id.toString(),
-        role: lockRole(device),
+        role: deviceRole(device),
         deviceName: device.name,
-        homeName: device.home_name || device.room_name || activeHome?.name || 'Home',
+        homeName: device.home_name || device.room_name || (String(device.home) === String(activeHomeId) ? activeHome?.name : undefined) || 'Home',
       },
     } as never)
-  }, [activeHome])
+  }, [activeHome, activeHomeId])
 
   // Get room name from room ID
   const getRoomName = useCallback((device: any) => {
@@ -545,7 +519,7 @@ const HomeScreen: React.FC = () => {
 
   // Render lock card
   const renderLockCard = useCallback((device: any) => (
-    <LockCard key={device.id} name={device.name} location={getRoomName(device)} role={lockRole(device)} connectionLabel={device.is_online === true ? 'Connected' : 'Not connected'} stateLabel={typeof device.is_locked === 'boolean' ? device.is_locked ? 'Locked' : 'Unlocked' : undefined} onPress={() => handleLockPress(device)} />
+    <LockCard key={device.id} name={device.name} location={getRoomName(device)} role={deviceRole(device)} connectionLabel={device.is_online === true ? 'Connected' : 'Not connected'} stateLabel={typeof device.is_locked === 'boolean' ? device.is_locked ? 'Locked' : 'Unlocked' : undefined} onPress={() => handleLockPress(device)} />
   ), [handleLockPress, getRoomName])
 
   // Show loading state while fetching all critical data
@@ -558,15 +532,19 @@ const HomeScreen: React.FC = () => {
   }
 
   return (<View style={{ flex: 1, backgroundColor: '#F3F5F8' }}>
- <Header user={user || { first_name: undefined, profile_picture: undefined }} homes={homes} activeHomeId={activeHomeId} onHomeSelect={setActiveHomeId} />
+ <Header user={user || { first_name: undefined, profile_picture: undefined }} homes={homes} activeHomeId={activeHomeId} onHomeSelect={handleHomeSelect} />
  <Animated.ScrollView style={{ opacity: contentOpacity }} refreshControl={activeTab === 'profile' || activeTab === 'energy' ? undefined : <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md }} showsVerticalScrollIndicator={false}>
   {(activeTab === 'home' || activeTab === 'devices') && <View style={{ gap: 12 }}>
-   {homes.length > 1 && <View style={{ alignSelf: 'flex-start', marginBottom: 4 }}><HomeDropdown items={homes} activeId={activeHomeId} onSelect={setActiveHomeId} onAddHome={() => router.push('/(home)/AddHome')} /></View>}
+  {homes.length > 1 && <View style={{ alignSelf: 'flex-start', marginBottom: 4 }}><HomeDropdown items={homes} activeId={activeHomeId} onSelect={handleHomeSelect} onAddHome={() => router.push('/(home)/AddHome')} /></View>}
+  {(deviceError || homesError || roomsError) && <View style={{ gap: 6 }}>
+   <Typography variant="body" color={colors.error}>{deviceError ? 'Unable to load devices. Please try again.' : 'Some home or room information could not be loaded.'}</Typography>
+   <TouchableOpacity accessibilityRole="button" onPress={handleRefresh}><Typography variant="body" color={colors.secondaryText}>Try again</Typography></TouchableOpacity>
+  </View>}
    {devices.length ? <>
     <Typography variant="h2" style={{ marginBottom: 8 }}>Your Locks</Typography>
     {devices.map(renderLockCard)}
     <AddLockCard onPress={() => router.push('/(devices)/AddDevice2')} />
-   </> : activeTab === 'home' ? steps.map((step, index) => <StepRow key={step.id} step={step} onAction={onAction} showLine={index < steps.length - 1} />) : <>
+  </> : (deviceError || homesError || roomsError || isLoadingHomes || isLoadingRooms || isLoadingDevices) ? null : activeTab === 'home' ? steps.map((step, index) => <StepRow key={step.id} step={step} onAction={onAction} showLine={index < steps.length - 1} />) : <>
     <Typography variant="h2">Your Locks</Typography><Typography variant="body" style={{ marginVertical: 16 }}>No locks yet. Added locks will appear here.</Typography><AddLockCard onPress={() => router.push('/(devices)/AddDevice2')} />
    </>}
    {activeTab === 'devices' && <TouchableOpacity onPress={() => router.push('/(HomePage_actions)/MyDevices')} style={{ paddingVertical: 12, alignItems: 'center' }}><Typography variant="caption" color={colors.secondaryText}>Search and filter devices</Typography></TouchableOpacity>}
