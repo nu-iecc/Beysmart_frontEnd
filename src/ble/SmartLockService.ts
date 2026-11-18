@@ -27,8 +27,9 @@ import {
     noteScan,
     ProbeOutcome,
 } from './shield/reconnect';
+import { ownerResetErrorText, ownerResetLog, OwnerResetUnknownError } from './shield/ownerReset';
 import { shieldSession, ShieldStatus } from './shield/session';
-import { loadDeviceBinding, loadStrictDeviceBinding, rememberPendingLock, resolveExpectedLock, saveDeviceBinding, updateBoundPeripheral } from './shield/store';
+import { clearOwnerLocalRecords, loadDeviceBinding, loadOwnerResetConfirmed, loadStrictDeviceBinding, markOwnerResetConfirmed, markOwnerResetLocalCleared, markOwnerResetUnclaimed, rememberPendingLock, resolveExpectedLock, saveDeviceBinding, updateBoundPeripheral } from './shield/store';
 import { SHIELD_OP } from './shield/uuids';
 import {
     BleDevice,
@@ -349,6 +350,109 @@ class SmartLockService {
     } catch (error) {
       console.error('Disconnect failed:', error);
       this.emit('error', { type: 'disconnect', error });
+    }
+  }
+
+  /**
+   * Return the connected lock to Unclaimed, then clear only this phone's owner record.
+   * The account device is deleted by the caller after this resolves.
+   * A confirmed reset is never sent again on retry.
+   */
+  public async resetLockOwnership(backendDeviceId: string): Promise<void> {
+    const deviceId = backendDeviceId.trim();
+    if (!deviceId) {
+      ownerResetLog('stopped. Missing device id. Account device kept.');
+      throw new Error('Missing device ID.');
+    }
+    const pending = await loadOwnerResetConfirmed(deviceId);
+    if (pending) {
+      ownerResetLog(`device ${deviceId} already has a confirmed reset for lock ${pending.lockIdHex}. 0x0109 will not be sent.`);
+      await this.finishConfirmedOwnerReset(deviceId);
+      return;
+    }
+    if (!this.isConnected()) {
+      ownerResetLog(`stopped for device ${deviceId}. Bluetooth is not connected. Account device kept.`);
+      throw new Error('Connect to the lock before resetting ownership.');
+    }
+    ownerResetLog(`device ${deviceId} is connected. Owner authentication runs before 0x0109.`);
+    let lockIdHex: string;
+    try {
+      lockIdHex = await shieldSession.resetOwnership();
+    } catch (error) {
+      if (!(error instanceof OwnerResetUnknownError)) {
+        ownerResetLog(`stopped for device ${deviceId}. ${ownerResetErrorText(error)} Account device kept.`);
+        throw error;
+      }
+      const recovered = shieldSession.getLockIdHex();
+      if (!recovered) {
+        ownerResetLog(`0x0109 result is unknown for device ${deviceId}. The lock could not be checked. Local owner kept.`);
+        throw error;
+      }
+      ownerResetLog(`0x0109 result is unknown for device ${deviceId}. Checking unclaimed state before deleting local data.`);
+      try {
+        await shieldSession.verifyUnclaimed(recovered);
+      } catch (verifyError) {
+        ownerResetLog(`unclaimed state was not confirmed for device ${deviceId}. ${ownerResetErrorText(verifyError)} Local owner kept.`);
+        throw verifyError;
+      }
+      lockIdHex = recovered;
+      try {
+        await markOwnerResetConfirmed(deviceId, lockIdHex);
+        await markOwnerResetUnclaimed(deviceId);
+      } catch (confirmError) {
+        ownerResetLog(`lock ${lockIdHex} is unclaimed, but the confirmation record failed. Account device kept. ${ownerResetErrorText(confirmError)}`);
+        throw confirmError;
+      }
+      await this.finishConfirmedOwnerReset(deviceId);
+      return;
+    }
+    try {
+      await markOwnerResetConfirmed(deviceId, lockIdHex);
+    } catch (error) {
+      ownerResetLog(`lock ${lockIdHex} accepted 0x0109, but the confirmation record failed. Account device kept. ${ownerResetErrorText(error)}`);
+      throw error;
+    }
+    await this.finishConfirmedOwnerReset(deviceId);
+  }
+
+  /** Finish local cleanup for a reset the lock already accepted. Does not send 0x0109. */
+  public async finishConfirmedOwnerReset(backendDeviceId: string): Promise<void> {
+    const deviceId = backendDeviceId.trim();
+    const pending = await loadOwnerResetConfirmed(deviceId);
+    if (!pending) {
+      ownerResetLog(`stopped for device ${deviceId}. No confirmed reset was found. Account device kept.`);
+      throw new Error('No confirmed owner reset to finish.');
+    }
+    if (!pending.unclaimedVerified) {
+      if (!this.isConnected()) {
+        ownerResetLog(`unclaimed check for device ${deviceId} needs a connection. Local owner kept.`);
+        throw new Error('Connect to the lock before removing it. The reset command will not be sent again.');
+      }
+      try {
+        await shieldSession.verifyUnclaimed(pending.lockIdHex);
+        await markOwnerResetUnclaimed(deviceId);
+      } catch (error) {
+        ownerResetLog(`unclaimed check failed for device ${deviceId} lock ${pending.lockIdHex}. Local owner kept. 0x0109 will not be sent again. ${ownerResetErrorText(error)}`);
+        throw error;
+      }
+    }
+    if (!pending.localCleared) {
+      try {
+        await clearOwnerLocalRecords(pending.lockIdHex, deviceId);
+        await markOwnerResetLocalCleared(deviceId);
+      } catch (error) {
+        ownerResetLog(`local clear failed for device ${deviceId} lock ${pending.lockIdHex}. Account device kept. 0x0109 will not be sent again. ${ownerResetErrorText(error)}`);
+        throw error;
+      }
+      ownerResetLog(`local owner cleared for device ${deviceId} lock ${pending.lockIdHex}.`);
+    } else {
+      ownerResetLog(`local owner was already cleared for device ${deviceId} lock ${pending.lockIdHex}.`);
+    }
+    await this.disconnect();
+    if (this.isConnected()) {
+      ownerResetLog(`disconnect did not finish for device ${deviceId}. Account delete can continue.`);
+    } else {
+      ownerResetLog(`disconnected after the confirmed reset for device ${deviceId}.`);
     }
   }
 

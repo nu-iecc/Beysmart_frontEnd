@@ -30,7 +30,8 @@ import { ShieldCommandError, ShieldIdentityError } from './errors';
 import { isTerminalProcessMatch, matchProcessEvent } from './processEvent';
 import { randomBytes } from './random';
 import { sameLock } from './reconnect';
-import { loadOwner, saveOwner, StoredOwner } from './store';
+import { claimAllowedAfterReset, ownerResetErrorText, ownerResetFrameReady, ownerResetLog, ownerResetOutcome, OwnerResetUnknownError, ownershipEpochFromAuthChallenge } from './ownerReset';
+import { clearExpectUnclaimed, expectsUnclaimed, loadOwner, saveOwner, StoredOwner } from './store';
 import { readTestKSetup } from './testConfig';
 import {
     SHIELD_AUTH_RX_UUID,
@@ -74,6 +75,8 @@ interface LiveSession {
   c2l: number;
   l2c: number;
   mode: number;
+  /** Raw AuthTx epoch for this session only. Null for a pending claim session. */
+  ownershipEpoch: Uint8Array | null;
 }
 
 /**
@@ -236,6 +239,74 @@ class ShieldSession {
     });
   }
 
+  /**
+   * Ask the authenticated owner session to return the lock to Unclaimed.
+   * Local credentials stay untouched until the caller sees a confirmed result.
+   */
+  /** Read the claim challenge phase. Does not send a claim proof. */
+  public async verifyUnclaimed(lockIdHex: string): Promise<void> {
+    return this.enqueue(async () => {
+      const lockId = hexToBytes(lockIdHex);
+      if (this.rememberedLockId && !equalBytes(this.rememberedLockId, lockId)) {
+        ownerResetLog('unclaimed check did not match the connected lock. Proof was not sent. Local owner kept.');
+        throw new Error('Unclaimed check did not match the connected lock.');
+      }
+      const phase = await this.readUnclaimedPhase(lockId);
+      if (phase !== 0x00) {
+        ownerResetLog(`unclaimed check phase 0x${phase.toString(16).padStart(2, '0')} was not unclaimed. Proof was not sent. Local owner kept.`);
+        throw new Error('The lock is not unclaimed. Local owner kept.');
+      }
+      ownerResetLog(`unclaimed check phase 0x00 confirmed for lock ${lockIdHex}. Claim proof was not sent.`);
+    });
+  }
+
+  public async resetOwnership(): Promise<string> {
+    return this.enqueue(async () => {
+      ownerResetLog('authenticating owner session before 0x0109.');
+      await this.ensureOwnerSession();
+      const live = this.live;
+      if (!live || live.mode !== 0x00) {
+        ownerResetLog('stopped. Owner session is not authenticated. Local owner kept.');
+        throw new Error('Owner reset requires an authenticated owner session.');
+      }
+      const lockIdHex = bytesToHex(live.lockId);
+      const epoch = live.ownershipEpoch;
+      if (!epoch || epoch.length !== 16) {
+        ownerResetLog('stopped. This owner session has no ownership epoch. Reset was not sent. Local owner kept.');
+        throw new Error('Owner reset requires the current authenticated owner session.');
+      }
+      ownerResetLog(`sending 0x0109 for lock ${lockIdHex}.`);
+      let plain: Uint8Array;
+      try {
+        plain = await this.sendCommand(SHIELD_OP.OWNER_RESET, epoch.slice());
+      } catch (error) {
+        if (error instanceof ShieldCommandError) {
+          ownerResetLog(`0x0109 result is unknown (${ownerResetErrorText(error)}). Local owner kept until the lock is checked.`);
+          throw new OwnerResetUnknownError(ownerResetErrorText(error));
+        }
+        ownerResetLog(`0x0109 did not finish (${ownerResetErrorText(error)}). Local owner kept.`);
+        throw error;
+      }
+      const outcome = ownerResetOutcome(plain);
+      if (outcome === 'invalid_packet') {
+        ownerResetLog('0x0109 result 0x01 INVALID_PACKET. Local owner kept.');
+        throw new Error('Owner reset packet was rejected. The lock was left unchanged.');
+      }
+      if (outcome === 'epoch_mismatch') {
+        ownerResetLog('0x0109 result 0x13 ownership epoch mismatch. Local owner kept.');
+        throw new Error('Owner reset epoch did not match this session. The lock was left unchanged.');
+      }
+      if (outcome !== 'success') {
+        const result = plain.length > 0 ? `0x${plain[0].toString(16)}` : 'empty';
+        ownerResetLog(`0x0109 result ${result} was not success. Local owner kept.`);
+        throw new Error('Owner reset was not confirmed. The lock was left unchanged.');
+      }
+      ownerResetLog(`lock ${lockIdHex} accepted 0x0109.`);
+      this.dropLive();
+      return lockIdHex;
+    });
+  }
+
   public async physicalAction(opcode: number): Promise<{ operationId: Uint8Array; outcome: number }> {
     return this.enqueue(async () => {
       await this.ensureOwnerSession();
@@ -342,7 +413,29 @@ class ShieldSession {
     console.log(`🔔 SecureTx indications subscribed ${SHIELD_SECURE_TX_UUID}. Subscription stays active until the link drops.`);
   }
 
+  private async readUnclaimedPhase(lockId: Uint8Array): Promise<number> {
+    const nonceApp = await randomBytes(16);
+    await writeCharacteristic(SHIELD_SERVICE_UUID, SHIELD_BOOTSTRAP_RX_UUID, buildClaimStart(lockId, nonceApp));
+    const challenge = await this.queues.bootstrap.wait(45000);
+    this.assertNotError(challenge, 0xc1, 'Unclaimed check');
+    if (challenge.length !== 99 || challenge[0] !== 0xc1 || challenge[1] !== 0x21) {
+      throw new Error('Unclaimed check challenge was not valid.');
+    }
+    if (!equalBytes(challenge.slice(83, 99), nonceApp) || !equalBytes(challenge.slice(3, 19), lockId)) {
+      throw new Error('Unclaimed check did not match this lock.');
+    }
+    return challenge[2];
+  }
+
   private async claim(lockId: Uint8Array): Promise<StoredOwner> {
+    const lockIdHex = bytesToHex(lockId);
+    let expectUnclaimed = false;
+    try {
+      expectUnclaimed = await expectsUnclaimed(lockIdHex);
+    } catch (error) {
+      ownerResetLog(`claim stopped for lock ${lockIdHex}. The unclaimed flag could not be read (${ownerResetErrorText(error)}). Proof was not sent.`);
+      throw error;
+    }
     const kSetup = readTestKSetup();
     const nonceApp = await randomBytes(16);
     console.log('🪪 Claim start');
@@ -360,8 +453,15 @@ class ShieldSession {
     const enrollmentId = challenge.slice(19, 35);
     const epoch = challenge.slice(35, 51);
     const originalNonce = challenge.slice(51, 67);
+    if (expectUnclaimed && !claimAllowedAfterReset(true, phase)) {
+      ownerResetLog(`claim stopped for lock ${lockIdHex}. Challenge phase 0x${phase.toString(16).padStart(2, '0')} is not unclaimed. Proof was not sent.`);
+      throw new Error('This lock is not unclaimed. A new claim was not sent.');
+    }
     if (![0x00, 0x01].includes(phase) || !nonzero(enrollmentId) || !nonzero(epoch) || !nonzero(originalNonce)) {
       throw new Error('Claim challenge fields were not valid.');
+    }
+    if (expectUnclaimed) {
+      ownerResetLog(`claim phase 0x00 confirms lock ${lockIdHex} is unclaimed.`);
     }
 
     const originalProof = phase === 0x00
@@ -406,6 +506,13 @@ class ShieldSession {
       ackDone: false,
     };
     await saveOwner(owner);
+    if (expectUnclaimed) {
+      try {
+        await clearExpectUnclaimed(lockIdHex);
+      } catch (error) {
+        ownerResetLog(`unclaimed flag could not be cleared for lock ${lockIdHex} (${ownerResetErrorText(error)}).`);
+      }
+    }
     console.log('🪪 Owner credential stored. Claim acknowledgement is next.');
     return owner;
   }
@@ -470,6 +577,7 @@ class ShieldSession {
       c2l: 0,
       l2c: 1,
       mode,
+      ownershipEpoch: mode === 0x00 ? ownershipEpochFromAuthChallenge(challenge, lockId) : null,
     };
     console.log('🔑 Session ready');
     void this.ensureSecureLoop();
@@ -495,6 +603,10 @@ class ShieldSession {
       opcode,
       plaintext,
     });
+    if (opcode === SHIELD_OP.OWNER_RESET && !ownerResetFrameReady(plaintext, frame)) {
+      ownerResetLog('stopped. Owner reset frame was not an 88-byte authenticated packet. It was not sent. Local owner kept.');
+      throw new Error('Owner reset packet was rejected before it was sent.');
+    }
     live.c2l += 1;
     console.log(`➡️ Command 0x${opcode.toString(16).padStart(4, '0')} seq ${sequence} (${frame.length} bytes)`);
 

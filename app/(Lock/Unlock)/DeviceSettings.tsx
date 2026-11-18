@@ -12,6 +12,8 @@ import { BackArrow } from '@/design-system/icons';
 import { Spacing } from '@/design-system/Layout/spacing';
 import { Typography } from '@/design-system/typography/typography';
 import { smartLockService } from '@/src/ble';
+import { ownerResetErrorText, ownerResetLog } from '@/src/ble/shield/ownerReset';
+import { clearOwnerResetConfirmed, loadOwnerResetConfirmed, OwnerResetConfirmation } from '@/src/ble/shield/store';
 import apiClient from '@/utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -43,7 +45,9 @@ const DeviceSettings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState<OwnerResetConfirmation | null>(null);
 
   // Settings state
   const [newDeviceName, setNewDeviceName] = useState(deviceName || '');
@@ -104,7 +108,22 @@ const DeviceSettings: React.FC = () => {
       }
     };
 
+    const loadResetConfirmation = async () => {
+      if (!deviceId) return;
+      try {
+        const confirmation = await loadOwnerResetConfirmed(deviceId);
+        if (!isMountedRef.current) return;
+        setResetConfirmation(confirmation);
+        if (confirmation) {
+          ownerResetLog(`device ${deviceId} has a confirmed reset waiting to finish. 0x0109 will not be sent again.`);
+        }
+      } catch (error) {
+        ownerResetLog(`could not read the reset confirmation for device ${deviceId}. ${ownerResetErrorText(error)}`);
+      }
+    };
+
     loadDeviceSettings();
+    loadResetConfirmation();
 
     return () => {
       isMountedRef.current = false;
@@ -251,6 +270,70 @@ const DeviceSettings: React.FC = () => {
     }
   };
 
+  const handleResetOwnership = async () => {
+    setShowResetConfirm(false);
+    setIsSaving(true);
+    let stage: 'reset' | 'delete' = 'reset';
+
+    try {
+      if (!deviceId) {
+        ownerResetLog('stopped. Missing device id. Account device kept.');
+        throw new Error('Missing device ID.');
+      }
+      ownerResetLog(`user confirmed ownership reset for device ${deviceId}.`);
+      await smartLockService.resetLockOwnership(deviceId);
+      const confirmation = await loadOwnerResetConfirmed(deviceId);
+      if (isMountedRef.current) setResetConfirmation(confirmation);
+      if (!confirmation) {
+        ownerResetLog(`stopped for device ${deviceId}. No confirmation record was found after reset. Account device kept.`);
+        throw new Error('Owner reset confirmation was not saved.');
+      }
+
+      stage = 'delete';
+      ownerResetLog(`deleting account device ${deviceId}.`);
+      await apiClient.delete(`home/devices/${deviceId}/`);
+      try {
+        await clearOwnerResetConfirmed(deviceId);
+      } catch (error) {
+        ownerResetLog(`device ${deviceId} was removed, but the local confirmation could not be cleared. ${ownerResetErrorText(error)}`);
+      }
+      ownerResetLog(`device ${deviceId} was removed from the account.`);
+      if (isMountedRef.current) {
+        setResetConfirmation(null);
+        Alert.alert('Success', 'Lock ownership was reset and the device was removed from your account.', [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.push('/(HomePage_actions)/MyDevices' as never);
+            },
+          },
+        ]);
+      }
+    } catch (error) {
+      const confirmation = deviceId
+        ? await loadOwnerResetConfirmed(deviceId).catch(() => null)
+        : null;
+      if (isMountedRef.current) setResetConfirmation(confirmation);
+      const accountDeleteFailed = stage === 'delete' && confirmation != null;
+      ownerResetLog(`stopped for device ${deviceId || 'unknown'}. ${ownerResetErrorText(error)} Account device kept.`);
+      if (isMountedRef.current) {
+        Alert.alert(
+          accountDeleteFailed ? 'Account removal failed' : 'Reset stopped',
+          accountDeleteFailed
+            ? 'The lock accepted the ownership reset, but it is still on your account. Try again to remove it. The reset command will not be sent again.'
+            : confirmation
+              ? 'The lock was already reset, but this phone could not finish cleanup. The device is still on your account. Try again. The reset command will not be sent again.'
+              : 'The lock was not reset, so the device is still on your account. Nothing was removed. Try again when the lock is connected.',
+          [{ text: 'OK' }]
+        );
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsSaving(false);
+      }
+    }
+  };
+
   // Handle delete device
   const handleDeleteDevice = async () => {
     setShowDeleteConfirm(false);
@@ -361,6 +444,7 @@ const DeviceSettings: React.FC = () => {
   {!smartLockService.isConnected() && <Typography variant="caption" color={colors.info}>Connect to your lock to modify these settings.</Typography>}
  </View>
  <View style={subpageStyles.card}><Typography variant="body">Location</Typography><Typography variant="caption" color={colors.disabled}>{homeName}</Typography></View>
+ <TouchableOpacity style={[subpageStyles.card, { flexDirection: 'row', alignItems: 'center', gap: 12 }]} onPress={() => setShowResetConfirm(true)} disabled={isSaving || (!smartLockService.isConnected() && !resetConfirmation)}><Ionicons name="refresh-outline" size={20} color={colors.error} /><View style={{ flex: 1 }}><Typography variant="body" color={colors.error}>{resetConfirmation ? 'Remove reset lock from account' : 'Reset lock ownership'}</Typography><Typography variant="caption" color={colors.disabled}>{resetConfirmation ? 'The lock already accepted the reset. This will not send it again.' : smartLockService.isConnected() ? 'Returns the lock to unclaimed and removes it from this account.' : 'Connect to the lock before resetting ownership.'}</Typography></View></TouchableOpacity>
  <TouchableOpacity style={[subpageStyles.card, { flexDirection: 'row', alignItems: 'center', gap: 12 }]} onPress={() => setShowDeleteConfirm(true)} disabled={isSaving}><Ionicons name="trash-outline" size={20} color={colors.error} /><Typography variant="body" color={colors.error}>Delete device</Typography></TouchableOpacity>
  <Modal
         visible={showDeleteConfirm}
@@ -437,6 +521,77 @@ const DeviceSettings: React.FC = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setShowDeleteConfirm(false)}
+                disabled={isSaving}
+                activeOpacity={0.7}
+                style={{
+                  backgroundColor: '#F5F5F5',
+                  paddingVertical: Spacing.md,
+                  paddingHorizontal: Spacing.lg,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                }}
+              >
+                <Typography variant="body" color="#000000" style={{ fontSize: 16, fontWeight: '600' }}>
+                  Cancel
+                </Typography>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+ <Modal
+        visible={showResetConfirm}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowResetConfirm(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end' }}>
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              padding: Spacing.md,
+              paddingTop: Spacing.lg,
+              width: '100%',
+              alignItems: 'center',
+            }}
+          >
+            <Typography
+              variant="h2"
+              color="#000000"
+              style={{ fontSize: 20, fontWeight: '600', marginBottom: Spacing.sm, textAlign: 'center' }}
+            >
+              Reset lock ownership?
+            </Typography>
+            <Typography
+              variant="body"
+              color="#666666"
+              style={{ fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: Spacing.lg }}
+            >
+              {resetConfirmation
+                ? `The lock already accepted the reset. Remove "${deviceName}" from your account now? The reset command will not be sent again.`
+                : `This returns "${deviceName}" to unclaimed and removes it from your account. The lock keeps its ID, setup credential, and calibration. If the reset does not succeed, the device stays on your account.`}
+            </Typography>
+            <View style={{ width: '100%', gap: Spacing.md }}>
+              <TouchableOpacity
+                onPress={handleResetOwnership}
+                disabled={isSaving}
+                activeOpacity={0.7}
+                style={{
+                  backgroundColor: colors.error,
+                  paddingVertical: Spacing.md,
+                  paddingHorizontal: Spacing.lg,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                }}
+              >
+                <Typography variant="body" color={colors.text} style={{ fontSize: 16, fontWeight: '600' }}>
+                  {isSaving ? 'Resetting...' : resetConfirmation ? 'Remove from account' : 'Reset ownership'}
+                </Typography>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowResetConfirm(false)}
                 disabled={isSaving}
                 activeOpacity={0.7}
                 style={{
