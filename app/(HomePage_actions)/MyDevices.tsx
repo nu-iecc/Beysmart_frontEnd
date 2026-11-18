@@ -1,5 +1,6 @@
 import LockCard from '@/components/LockCard';
 import PageHeader from '@/components/PageHeader';
+import { deviceRole, getAccessibleDevices, getAllPages } from '@/services/locks';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -7,13 +8,12 @@ import { ActivityIndicator, RefreshControl, ScrollView, TextInput, TouchableOpac
 import ProfilePage from '../(profile actions)/Profile';
 import { getMediaUrl } from '../../constants/api';
 import { colors } from '../../design-system/colors/colors';
-import { BackArrow, Lock } from '../../design-system/icons';
+import { Lock } from '../../design-system/icons';
 import { PlusIcon } from '../../design-system/icons/filled';
 import { Spacing } from '../../design-system/Layout/spacing';
 import { BottomNavigation } from '../../design-system/Navigation/BottomNavigation';
 import { MyDevicesConstants } from '../../design-system/Profile actions/Constants';
 import { Typography } from '../../design-system/typography/typography';
-import { deviceRole, getAccessibleDevices, getAllPages } from '@/services/locks';
 import { scale, scaleFont } from '../../utils/responsive';
 
 // Types

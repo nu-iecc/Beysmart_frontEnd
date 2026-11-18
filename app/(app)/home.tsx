@@ -1,16 +1,12 @@
-import LockCard, { AddLockCard } from '@/components/LockCard';
-import ProfileSection from '@/components/ProfileSection';
 import ComingSoon from '@/components/ComingSoon';
-import LockLoader from '@/components/LockLoader';
 import HomeDropdown from '@/components/HomeDropdown';
-import { Ionicons } from '@expo/vector-icons';
-import { toast } from 'sonner-native';
-import { Animated, RefreshControl } from 'react-native';
-import { Spacing } from '@/design-system/Layout/spacing';
-import { AppButton } from '@/design-system/Buttons/Buttons'
-import { colors } from '@/design-system/colors/colors'
-import { HOME_SETUP, SUPPORT_BODY, SUPPORT_EMAIL, SUPPORT_SUBJECT } from '@/design-system/home/Constants'
-import { SetupStep, completeSetupStep, resetSetupSteps } from '@/design-system/home/HomeSetupUtils'
+import LockCard, { AddLockCard } from '@/components/LockCard';
+import LockLoader from '@/components/LockLoader';
+import ProfileSection from '@/components/ProfileSection';
+import { AppButton } from '@/design-system/Buttons/Buttons';
+import { colors } from '@/design-system/colors/colors';
+import { HOME_SETUP, SUPPORT_BODY, SUPPORT_EMAIL, SUPPORT_SUBJECT } from '@/design-system/home/Constants';
+import { SetupStep, completeSetupStep, resetSetupSteps } from '@/design-system/home/HomeSetupUtils';
 import {
     CorrectIcon,
     Door,
@@ -18,19 +14,19 @@ import {
     LightIcon,
     LockIcon,
     Robot
-} from '@/design-system/icons'
-import { BottomNavigation, TopNavigation } from '@/design-system/Navigation'
-import type { BottomNavigationItem, Home as DSHome, User as DSUser } from '@/design-system/Navigation/Types'
-import { Typography } from '@/design-system/typography/typography'
-import { scale } from '@/utils/responsive'
-import AsyncStorage from '@react-native-async-storage/async-storage'
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Linking, ScrollView, TouchableOpacity, View } from 'react-native'
-import ProfilePage from '../(profile actions)/Profile'
-import { getMediaUrl } from '../../constants/api'
-import apiClient from '../../utils/api'
-import { deviceRole, getAccessibleDevices, getAllPages } from '@/services/locks'
+} from '@/design-system/icons';
+import { Spacing } from '@/design-system/Layout/spacing';
+import { BottomNavigation, TopNavigation } from '@/design-system/Navigation';
+import type { BottomNavigationItem, Home as DSHome, User as DSUser } from '@/design-system/Navigation/Types';
+import { Typography } from '@/design-system/typography/typography';
+import { deviceRole, getAccessibleDevices, getAllPages } from '@/services/locks';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Animated, Linking, RefreshControl, TouchableOpacity, View } from 'react-native';
+import { toast } from 'sonner-native';
+import { getMediaUrl } from '../../constants/api';
+import apiClient from '../../utils/api';
 
 const StepIcon: React.FC<{ step: SetupStep }> = ({ step }) => {
     const size = HOME_SETUP.DIMENSIONS.STEP_ICON.SIZE
